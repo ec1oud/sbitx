@@ -157,13 +157,3 @@ void handleButtonPress() {
          }
       }
    }
-
-int main( int argc, char* argv[] ) {
-
-	hw_init();
-
-	while (1);
-
-  return 0;
-}
-
