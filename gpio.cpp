@@ -1,6 +1,11 @@
 #include <stdio.h>
 #include <time.h>
 #include <wiringPi.h>
+#include <qpointingdevice.h>
+
+#include <QtGui/private/qhighdpiscaling_p.h>
+#include <QtGui/qpa/qwindowsysteminterface.h>
+#include <QWindow>
 
 /* Front Panel controls */
 char pins[15] = {0, 2, 3, 6, 7,
@@ -34,6 +39,9 @@ struct encoder {
 void enc_isr(void);
 
 struct encoder enc_a, enc_b;
+
+QPointingDevice *encoder = nullptr;
+QPointingDevice *tuningEncoder = nullptr;
 
 void init_gpio_pins(){
 	for (int i = 0; i < 15; i++){
@@ -95,22 +103,41 @@ int enc_read(struct encoder *e) {
 
 static int enc_ticks = 0;
 static int tuning_ticks = 0;
+
+static QWindow *encoderWindow = nullptr;
+
+void setEncoderWindow(QWindow *win) {
+    encoderWindow = win;
+}
+
 void enc_isr(void){
 	int val = enc_read(&enc_a);
-	if (val < 0)
-		enc_ticks++;
-	if (val > 0)
-		enc_ticks--;
+    if (val) {
+        const int ticks = enc_ticks;
+        if (val < 0)
+            enc_ticks++;
+        if (val > 0)
+            enc_ticks--;
+        if (enc_ticks != ticks) {
+            qint64 ts = QDateTime::currentMSecsSinceEpoch();
+            QPoint gpos = QHighDpiScaling::mapPositionToNative(QCursor::pos(), encoderWindow->screen()->handle());
+            QPoint wpos = QHighDpiScaling::mapPositionToNative(encoderWindow->mapFromGlobal(QCursor::pos()),
+                                                               encoderWindow->screen()->handle());
+            qDebug() << ts << "wheel" << (enc_ticks - ticks) << "@" << wpos << gpos;
+            QWindowSystemInterface::handleWheelEvent(encoderWindow, ts, /* encoder, */ wpos, gpos, {},
+                                                     {0, (enc_ticks - ticks) * 120});
+        }
+    }
 	//~ printf("enc %d\n", val);
 	val = enc_read(&enc_b);
 	if (val < 0)
 		tuning_ticks--;
 	if (val > 0)
 		tuning_ticks++;
-	printf("enc %d tuning %d\n", enc_ticks, tuning_ticks);
+    // printf("enc %d tuning %d\n", enc_ticks, tuning_ticks);
 }
 
-void hw_init(){
+void encodersInit() {
 	wiringPiSetup();
 	init_gpio_pins();
 
@@ -121,6 +148,15 @@ void hw_init(){
 	wiringPiISR(ENC1_B, INT_EDGE_BOTH, enc_isr);
 	wiringPiISR(ENC2_A, INT_EDGE_BOTH, enc_isr);
 	wiringPiISR(ENC2_B, INT_EDGE_BOTH, enc_isr);
+
+    encoder = new QPointingDevice("little knob", 72ll,
+                                  QPointingDevice::DeviceType::Unknown, QPointingDevice::PointerType::Generic,
+                                  QInputDevice::Capability::Scroll, 0, 1);
+    tuningEncoder = new QPointingDevice("tuning knob", 73ll,
+                                        QInputDevice::DeviceType::Unknown, QPointingDevice::PointerType::Generic,
+                                        QInputDevice::Capability::Scroll, 0, 1);
+    QWindowSystemInterface::registerInputDevice(encoder);
+    QWindowSystemInterface::registerInputDevice(tuningEncoder);
 }
 
 static time_t buttonPressTime;

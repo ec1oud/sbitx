@@ -1,12 +1,13 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QWindow>
 
 #include "gpio.h"
 
 int main(int argc, char *argv[])
 {
     qputenv("QT_IM_MODULE", QByteArray("qtvirtualkeyboard"));
-    hw_init();
+    encodersInit();
 
     QGuiApplication app(argc, argv);
 
@@ -19,6 +20,7 @@ int main(int argc, char *argv[])
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
     engine.load(url);
+    setEncoderWindow(qobject_cast<QWindow *>(engine.rootObjects().first()));
 
     return app.exec();
 }

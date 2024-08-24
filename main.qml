@@ -26,6 +26,10 @@ Window {
         }
     }
 
+    ValueSpinbox {
+        y: 100
+    }
+
     InputPanel {
         id: inputPanel
         z: 99
@@ -55,4 +59,6 @@ Window {
             }
         }
     }
+
+    Shortcut { sequence: StandardKey.Quit; onActivated: Qt.quit() }
 }

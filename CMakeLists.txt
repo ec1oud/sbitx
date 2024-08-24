@@ -31,6 +31,7 @@ set_target_properties(qsb PROPERTIES
 
 target_link_libraries(qsb
     PRIVATE Qt6::Quick
+    Qt6::GuiPrivate
     wiringPi
 )
 

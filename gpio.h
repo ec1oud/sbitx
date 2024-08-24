@@ -1,6 +1,9 @@
 #ifndef GPIO_H
 #define GPIO_H
 
-void hw_init();
+class QWindow;
+
+void encodersInit();
+void setEncoderWindow(QWindow *win);
 
 #endif // GPIO_H
