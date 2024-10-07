@@ -11,8 +11,13 @@ FFT_OBJ  = $(patsubst %.c,$(BUILD_DIR)/%.o,$(FFT_SRC))
 
 TARGETS  = gen_ft8 decode_ft8 test_ft8 libft8.a
 
-CFLAGS   = -fsanitize=address -O3 -ggdb3 -DHAVE_STPCPY -I.
+ifdef FT8_DEBUG
+CFLAGS   = -fsanitize=address -ggdb3 -DHAVE_STPCPY -I.
 LDFLAGS  = -fsanitize=address -lm
+else
+CFLAGS   = -O3 -DHAVE_STPCPY -I.
+LDFLAGS  = -lm
+endif
 
 # Optionally, use Portaudio for live audio input
 # Portaudio is a C++ library, so then you need to build with clang++ or g++:
@@ -36,17 +41,17 @@ run_tests: test_ft8
 install:
 	install libft8.a /usr/lib/libft8.a
 
-libft8.a:
+libft8.a: $(FT8_OBJ) $(COMMON_OBJ)
 	$(AR) rc libft8.a $(FT8_OBJ) $(COMMON_OBJ)
 
-gen_ft8: $(BUILD_DIR)/gen_ft8.o $(FT8_OBJ) $(COMMON_OBJ) $(FFT_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+gen_ft8: $(BUILD_DIR)/gen_ft8.o libft8.a $(FFT_OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
-decode_ft8: $(BUILD_DIR)/decode_ft8.o $(FT8_OBJ) $(COMMON_OBJ) $(FFT_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+decode_ft8: $(BUILD_DIR)/decode_ft8.o libft8.a $(FFT_OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
-test_ft8: $(BUILD_DIR)/test/test.o $(FT8_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $^
+test_ft8: $(BUILD_DIR)/test/test.o libft8.a $(FFT_OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
