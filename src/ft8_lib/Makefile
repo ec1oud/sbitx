@@ -9,7 +9,7 @@ COMMON_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(COMMON_SRC))
 FFT_SRC  = $(wildcard fft/*.c)
 FFT_OBJ  = $(patsubst %.c,$(BUILD_DIR)/%.o,$(FFT_SRC))
 
-TARGETS  = gen_ft8 decode_ft8 test_ft8
+TARGETS  = gen_ft8 decode_ft8 test_ft8 libft8.a
 
 CFLAGS   = -fsanitize=address -O3 -ggdb3 -DHAVE_STPCPY -I.
 LDFLAGS  = -fsanitize=address -lm
@@ -34,8 +34,10 @@ run_tests: test_ft8
 	@./test_ft8
 
 install:
-	$(AR) rc libft8.a $(FT8_OBJ) $(COMMON_OBJ)
 	install libft8.a /usr/lib/libft8.a
+
+libft8.a:
+	$(AR) rc libft8.a $(FT8_OBJ) $(COMMON_OBJ)
 
 gen_ft8: $(BUILD_DIR)/gen_ft8.o $(FT8_OBJ) $(COMMON_OBJ) $(FFT_OBJ)
 	$(CC) $(LDFLAGS) -o $@ $^
