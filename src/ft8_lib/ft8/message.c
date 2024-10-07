@@ -176,6 +176,7 @@ ftx_message_rc_t ftx_message_encode_std(ftx_message_t* msg, ftx_callsign_hash_in
     if (n28b < 0)
         return FTX_MESSAGE_RC_ERROR_CALLSIGN2;
 
+    char *slash_de = strchr(call_de, '/');
     uint8_t i3 = 1; // No suffix or /R
     if (ends_with(call_to, "/P") || ends_with(call_de, "/P"))
     {
@@ -183,6 +184,13 @@ ftx_message_rc_t ftx_message_encode_std(ftx_message_t* msg, ftx_callsign_hash_in
         if (ends_with(call_to, "/R") || ends_with(call_de, "/R"))
         {
             return FTX_MESSAGE_RC_ERROR_SUFFIX;
+        }
+    }
+    else
+    {
+        if ((!extra || !extra[0]) && slash_de && slash_de - call_de >= 2)
+        {
+            return FTX_MESSAGE_RC_ERROR_CALLSIGN2; // nonstandard call: need a type 4 message
         }
     }
 
