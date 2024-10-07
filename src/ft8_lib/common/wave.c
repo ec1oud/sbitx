@@ -111,6 +111,11 @@ int load_wav(float* signal, int* num_samples, int* sample_rate, const char* path
     fread((void*)subChunk2ID, sizeof(subChunk2ID), 1, f);
     fread((void*)&subChunk2Size, sizeof(subChunk2Size), 1, f);
 
+/* sbitx writes invalid wav files */
+printf("subChunk2Size %u blockAlign %u ratio %u num_samples %d\n", subChunk2Size, blockAlign, subChunk2Size / blockAlign, *num_samples);
+    if (subChunk2Size == 4294967295)
+        subChunk2Size = 360000;
+
     if (subChunk2Size / blockAlign > *num_samples)
         return -4;
 

@@ -310,7 +310,7 @@ int main(int argc, char** argv)
         int rc = load_wav(signal, &num_samples, &sample_rate, wav_path);
         if (rc < 0)
         {
-            LOG(LOG_ERROR, "ERROR: cannot load wave file %s\n", wav_path);
+            LOG(LOG_ERROR, "ERROR %d: cannot load wave file %s\n", rc, wav_path);
             return -1;
         }
         LOG(LOG_INFO, "Sample rate %d Hz, %d samples, %.3f seconds\n", sample_rate, num_samples, (double)num_samples / sample_rate);
