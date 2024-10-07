@@ -56,6 +56,11 @@ else
 	cd ..
 fi
 
+echo "compiling ft8_lib"
+cd src/ft8_lib
+make
+cd ../..
+
 if [ "$F" != "sbitx" ]; then
   echo "compiling $F in $WORKING_DIRECTORY"
 else
