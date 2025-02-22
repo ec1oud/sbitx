@@ -1,5 +1,7 @@
+#include <signal.h>
 #include <stdio.h>
 #include <time.h>
+#include <unistd.h>
 #include <wiringPi.h>
 #include <qpointingdevice.h>
 
@@ -28,6 +30,11 @@ char pins[15] = {0, 2, 3, 6, 7,
 
 #define ENC_FAST 1
 #define ENC_SLOW 5
+
+// https://morsecode.world/international/timing.html
+#define MORSE_WPM 12
+#define MORSE_DIT_MS MORSE_WPM 60 / (50 * MORSE_WPM)
+// i.e. dit time is 0.1 sec
 
 // encoder state
 struct encoder {
@@ -128,13 +135,40 @@ void enc_isr(void){
                                                      {0, (enc_ticks - ticks) * 120});
         }
     }
-	//~ printf("enc %d\n", val);
+	//~ printf("enc a %d\n", val);
 	val = enc_read(&enc_b);
 	if (val < 0)
 		tuning_ticks--;
 	if (val > 0)
 		tuning_ticks++;
-    // printf("enc %d tuning %d\n", enc_ticks, tuning_ticks);
+    //~ printf("enc b %d tuning %d\n", enc_ticks, tuning_ticks);
+}
+
+void key_timer_isr(int sig) {
+	qint64 ts = QDateTime::currentMSecsSinceEpoch();
+	// both are active-low inputs
+	static bool pttState = true;
+	static bool dashState = true;
+	bool ptt = digitalRead(PTT);
+	bool dash = digitalRead(DASH);
+	//~ printf("%lld key state %d %d\n", ts, ptt, dash);
+	if (ptt != pttState) {
+		qDebug() << ts << "dit" << !ptt << encoderWindow;
+		QWindowSystemInterface::handleKeyEvent(encoderWindow, //QDateTime::currentMSecsSinceEpoch(),
+			(ptt ? QEvent::KeyRelease : QEvent::KeyPress), Qt::Key_Period, Qt::NoModifier); // , Qt::ControlModifier);
+	} else if (dash != dashState) {
+		qDebug() << ts << "dah" << !dash << encoderWindow;
+		QWindowSystemInterface::handleKeyEvent(encoderWindow, //QDateTime::currentMSecsSinceEpoch(),
+			(dash ? QEvent::KeyRelease : QEvent::KeyPress), Qt::Key_hyphen, Qt::NoModifier); //, Qt::ControlModifier);
+	}
+	pttState = ptt;
+	dashState = dash;
+}
+
+void key_isr(void) {
+	//~ qint64 ts = QDateTime::currentMSecsSinceEpoch();
+	//~ printf("%lld key state %d %d\n", ts, digitalRead(PTT), digitalRead(DASH));
+	ualarm(5000, 0); // debounce
 }
 
 void encodersInit() {
@@ -148,6 +182,9 @@ void encodersInit() {
 	wiringPiISR(ENC1_B, INT_EDGE_BOTH, enc_isr);
 	wiringPiISR(ENC2_A, INT_EDGE_BOTH, enc_isr);
 	wiringPiISR(ENC2_B, INT_EDGE_BOTH, enc_isr);
+	wiringPiISR(PTT, INT_EDGE_BOTH, key_isr);
+	wiringPiISR(DASH, INT_EDGE_BOTH, key_isr);
+	signal(SIGALRM, key_timer_isr);
 
     encoder = new QPointingDevice("little knob", 72ll,
                                   QPointingDevice::DeviceType::Unknown, QPointingDevice::PointerType::Generic,
