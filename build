@@ -62,14 +62,7 @@ else
   VERSION=`grep VER src/sdr_ui.h | awk 'FNR==1{print $4}' | sed -e 's/"//g'`
   echo "compiling $F version $VERSION in $WORKING_DIRECTORY"
 fi
-gcc $FLAGS -o $F \
-	 src/vfo.c src/si570.c src/sbitx_sound.c src/fft_filter.c src/sbitx_gtk.c src/sbitx_utils.c \
-    src/i2cbb.c src/si5351v2.c src/ini.c src/hamlib.c src/queue.c src/modems.c src/logbook.c \
-		src/modem_cw.c src/settings_ui.c src/hist_disp.c src/ntputil.c \
-		src/telnet.c src/macros.c src/modem_ft8.c src/remote.c src/mongoose.c src/para_eq.c src/webserver.c src/eq_ui.c src/$F.c  \
-		src/ft8_lib/libft8.a  \
-	-lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 -lnsl -lrt \
-	`pkg-config --cflags gtk+-3.0` `pkg-config --libs gtk+-3.0`
+make sbitx
  
 if [ $OPT -eq 1 ]; then
 	#Remove debugging stuff for a smaller binary
