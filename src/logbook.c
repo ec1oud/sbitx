@@ -74,28 +74,29 @@ int logbook_query(char *query, int from_id, char *result_file){
 	//add to the bottom of the logbook
 	if (from_id > 0){
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where (callsign_recv LIKE '%s%%' AND id < %d) ",
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where (callsign_recv LIKE '%s%%' AND id < %d) ",
 				query, from_id);
 		else
-			sprintf(statement, "select * from logbook where id < %d ", from_id);
+			snprintf(statement, sizeof(statement), "select * from logbook where id < %d ", from_id);
 	}
 	//last 50 QSOs
 	else if (from_id == 0){
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where callsign_recv LIKE '%s%%' ", query);
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where callsign_recv LIKE '%s%%' ",
+				query);
 		else
-			strcpy(statement, "select * from logbook ");
+			strncpy(statement, "select * from logbook ", sizeof(statement));
 	}
 	//latest QSOs after from_id (top of the log)
 	else {
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where (callsign_recv LIKE '%s%%' AND id > %d) ",
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where (callsign_recv LIKE '%s%%' AND id > %d) ",
 				query, -from_id);
 		else
-			sprintf(statement, "select * from logbook where id > %d ", -from_id);
+			snprintf(statement, sizeof(statement), "select * from logbook where id > %d ", -from_id);
 	}
 	strcat(statement, "ORDER BY id DESC LIMIT 50;");
 
@@ -104,7 +105,7 @@ int logbook_query(char *query, int from_id, char *result_file){
 
 	char output_path[PATH_MAX];
 	sprintf(output_path, "%s/sbitx/data/result_rows.txt", getenv("HOME"));
-	strcpy(result_file, output_path);
+	strncpy(result_file, output_path, sizeof(result_file));
 
 	FILE *pf = fopen(output_path, "w");
 	if (!pf)
@@ -118,18 +119,18 @@ int logbook_query(char *query, int from_id, char *result_file){
 			switch (sqlite3_column_type(stmt, i))
 			{
 			case (SQLITE3_TEXT):
-				strcpy(param, sqlite3_column_text(stmt, i));
+				strncpy(param, sqlite3_column_text(stmt, i), sizeof(param));
 				break;
 			case (SQLITE_INTEGER):
-				sprintf(param, "%d", sqlite3_column_int(stmt, i));
+				snprintf(param, sizeof(param), "%d", sqlite3_column_int(stmt, i));
 				break;
 			case (SQLITE_FLOAT):
-				sprintf(param, "%g", sqlite3_column_double(stmt, i));
+				snprintf(param, sizeof(param), "%g", sqlite3_column_double(stmt, i));
 				break;
 			case (SQLITE_NULL):
 				break;
 			default:
-				sprintf(param, "%d", sqlite3_column_type(stmt, i));
+				snprintf(param, sizeof(param), "%d", sqlite3_column_type(stmt, i));
 				break;
 			}
 			//printf("%s|", param);
@@ -148,12 +149,12 @@ int logbook_count_dup(const char *callsign, int last_seconds){
 	sqlite3_stmt *stmt;
 
 	time_t log_time = time_sbitx() - last_seconds;
-	struct tm *tmp = gmtime(&log_time);
-	sprintf(date_str, "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
-	sprintf(time_str, "%02d%02d", tmp->tm_hour, tmp->tm_min);
+	struct tm* tmp = gmtime(&log_time);
+	snprintf(date_str, sizeof(date_str), "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
+	snprintf(time_str, sizeof(time_str), "%02d%02d", tmp->tm_hour, tmp->tm_min);
 
-	sprintf(statement, "select * from logbook where "
-		"callsign_recv=\"%s\" AND qso_date >= \"%s\" AND qso_time >= \"%s\"",
+	snprintf(statement, sizeof(statement), "select * from logbook where "
+					   "callsign_recv=\"%s\" AND qso_date >= \"%s\" AND qso_time >= \"%s\"",
 		callsign, date_str, time_str);
 
 	sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
@@ -171,16 +172,15 @@ int logbook_get_grids(void (*f)(char *,int)) {
 		"GROUP BY exch_recv order by exch_recv";
 	int res = sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
 	int cnt = 0;
-	char grid[10];
+	char grid[20];
 	int n = 0;
 	while (sqlite3_step(stmt) == SQLITE_ROW) {
 		int num_cols = sqlite3_column_count(stmt);
 		for (int i = 0; i < num_cols; i++){
 			char const *col_name = sqlite3_column_name(stmt, i);
 			if (!strcmp(col_name, "exch_recv")) {
-				strcpy(grid, sqlite3_column_text(stmt, i));
-			} else
-			if (!strcmp(col_name, "n")) {
+				strncpy(grid, sqlite3_column_text(stmt, i), sizeof(grid));
+			} else if (!strcmp(col_name, "n")) {
 				n = sqlite3_column_int(stmt, i);
 			}
 		}
@@ -220,11 +220,14 @@ bool logbook_grid_exists(char *id) {
 	sqlite3_finalize(stmt);
 	return exists;
 }
-int logbook_prev_log(const char *callsign, char *result){
+
+// TODO unsafe API: result_len must be given
+int logbook_prev_log(const char* callsign, char* result)
+{
 	char statement[1000], param[2000];
-	sqlite3_stmt *stmt;
-	sprintf(statement, "select * from logbook where "
-		"callsign_recv=\"%s\" ORDER BY id DESC",
+	sqlite3_stmt* stmt;
+	snprintf(statement, sizeof(statement),
+		"select * from logbook where callsign_recv=\"%s\" ORDER BY id DESC",
 		callsign);
 	strcpy(result, callsign);
 	strcat(result, ": ");
@@ -241,18 +244,18 @@ int logbook_prev_log(const char *callsign, char *result){
 				switch (sqlite3_column_type(stmt, i))
 				{
 				case (SQLITE3_TEXT):
-					strcpy(param, sqlite3_column_text(stmt, i));
+					strncpy(param, sqlite3_column_text(stmt, i), sizeof(param));
 					break;
 				case (SQLITE_INTEGER):
-					sprintf(param, "%d", sqlite3_column_int(stmt, i));
+					snprintf(param, sizeof(param), "%d", sqlite3_column_int(stmt, i));
 					break;
 				case (SQLITE_FLOAT):
-					sprintf(param, "%g", sqlite3_column_double(stmt, i));
+					snprintf(param, sizeof(param), "%g", sqlite3_column_double(stmt, i));
 					break;
 				case (SQLITE_NULL):
 					break;
 				default:
-					sprintf(param, "%d", sqlite3_column_type(stmt, i));
+					snprintf(param, sizeof(param), "%d", sqlite3_column_type(stmt, i));
 					break;
 				}
 				strcat(result, param);
@@ -263,7 +266,7 @@ int logbook_prev_log(const char *callsign, char *result){
 		rec++;
 	}
 	sqlite3_finalize(stmt);
-	sprintf(param, ": %d", rec);
+	snprintf(param, sizeof(param), ": %d", rec);
 	strcat(result, param);
 	return rec;
 }
@@ -339,7 +342,7 @@ void message_add(char *mode, unsigned int frequency, int outgoing, char *message
 		+ ((tmp->tm_mon+1) * 100) + (tmp->tm_mday);
 	int time_utc = (tmp->tm_hour * 10000) + (tmp->tm_min * 100) + tmp->tm_sec;
 
-	sprintf(statement,
+	snprintf(statement, sizeof(statement),
 		"INSERT INTO messages (mode, freq, qso_date, qso_time, is_outgoing, data)"
 		" VALUES('%s', '%d', '%d', '%d',  '%d','%s');",
 			mode, frequency, date_utc, time_utc, outgoing, message);
@@ -358,25 +361,25 @@ void message_add(char *mode, unsigned int frequency, int outgoing, char *message
 	}
 }
 
-void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
-		char *rst_recv, char *exchange_recv, int tx_power, int tx_vswr, char *comments){
+void logbook_add(const char* contact_callsign, const char* rst_sent, const char* exchange_sent,
+	const char* rst_recv, const char* exchange_recv, int tx_power, int tx_vswr, const char* comments)
+{
 	char statement[1000], *err_msg, date_str[11], time_str[5];
-	char freq[12], log_freq[12], mode[10], mycallsign[12];
+	char log_freq[12], mode[10], mycallsign[12];
 
 	time_t log_time = time_sbitx();
-	struct tm *tmp = gmtime(&log_time);
-	get_field_value("r1:freq", freq);
+	struct tm* tmp = gmtime(&log_time);
 	get_field_value("r1:mode", mode);
+	const bool ftx = !strcmp(mode, "FT8");
+	int freq = field_int("FREQ");
 	get_field_value("#mycallsign", mycallsign);
 
-	sprintf(log_freq, "%d", atoi(freq)/1000);
-	//~ printf("log_freq '%s' -> %d %lf -> '%s'", freq, atoi(freq)/1000, atof(freq) / 1000.0, log_freq);
-
-	sprintf(date_str, "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
-	sprintf(time_str, "%02d%02d", tmp->tm_hour, tmp->tm_min);
+	snprintf(log_freq, sizeof(log_freq), "%d", freq);
+	snprintf(date_str, sizeof(date_str), "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
+	snprintf(time_str, sizeof(time_str), "%02d%02d", tmp->tm_hour, tmp->tm_min);
 
 	if (logbook_has_power_and_swr()) {
-		sprintf(statement,
+		snprintf(statement, sizeof(statement),
 			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
 			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, tx_power, vswr, comments) "
 			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%d.%d','%d.%d','%s');",
@@ -384,7 +387,7 @@ void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 				rst_sent, exchange_sent, contact_callsign, rst_recv, exchange_recv,
 				tx_power / 10, tx_power % 10, tx_vswr / 10, tx_vswr % 10, comments);
 	} else {
-		sprintf(statement,
+		snprintf(statement, sizeof(statement),
 			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
 			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, comments) "
 			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%s');",
@@ -395,7 +398,7 @@ void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 	if (db == NULL)
 		logbook_open();
 
-	sqlite3_exec(db, statement, 0,0, &err_msg);
+	sqlite3_exec(db, statement, 0, 0, &err_msg);
 
 	logbook_refill(NULL);
 }
@@ -517,18 +520,18 @@ int export_adif(char *path, char *start_date, char *end_date){
 			switch (sqlite3_column_type(stmt, i))
 			{
 			case (SQLITE3_TEXT):
-				strcpy(param, sqlite3_column_text(stmt, i));
+				strncpy(param, sqlite3_column_text(stmt, i), sizeof(param));
 				break;
 			case (SQLITE_INTEGER):
-				sprintf(param, "%d", sqlite3_column_int(stmt, i));
+				snprintf(param, sizeof(param), "%d", sqlite3_column_int(stmt, i));
 				break;
 			case (SQLITE_FLOAT):
-				sprintf(param, "%g", sqlite3_column_double(stmt, i));
+				snprintf(param, sizeof(param), "%g", sqlite3_column_double(stmt, i));
 				break;
 			case (SQLITE_NULL):
 				break;
 			default:
-				sprintf(param, "%d", sqlite3_column_type(stmt, i));
+				snprintf(param, sizeof(param), "%d", sqlite3_column_type(stmt, i));
 				break;
 			}
 			//If mode is FT8; set rec to 1 so we switch to use gridsquare instead of stx/srx fields - n1qm
@@ -540,11 +543,11 @@ int export_adif(char *path, char *start_date, char *end_date){
 
 			if (i == 2){
 				long f = atoi(param);
-				float ffreq=atof(param)/1000.0;  // convert kHz to MHz
-				sprintf(param, "%.3f",ffreq); // write out with 3 decimal digits
-				for (int j = 0 ; j < sizeof(bands)/sizeof(struct band_name); j++)
-					if (bands[j].from <= f && f <= bands[j].to){
-						fprintf(pf, "<BAND:%d>%s ", strlen(bands[j].name), bands[j].name);
+				float ffreq = atof(param) / 1000.0; // convert kHz to MHz
+				snprintf(param, sizeof(param), "%.3f", ffreq);	  // write out with 3 decimal digits
+				for (int j = 0; j < sizeof(bands) / sizeof(struct band_name); j++)
+					if (bands[j].from <= f && f <= bands[j].to) {
+						fprintf(pf, "<BAND:%d>%s\n", strlen(bands[j].name), bands[j].name);
 					}
 			}
 			else if (i == 3) //it is the date
@@ -783,23 +786,23 @@ void export_button_clicked(GtkWidget *window) {
     end_calendar = gtk_calendar_new();
     gtk_box_pack_start(GTK_BOX(tobox), end_calendar, TRUE, TRUE, 0);
 
-    // Show all widgets
-    gtk_widget_show_all(dialog);
-		gint response = gtk_dialog_run(GTK_DIALOG(dialog));
-		if (response == GTK_RESPONSE_OK){
-			char path[1000], start_str[20], end_str[20];
-			if (get_filename(path) != -1){
-				guint start_year, start_month, start_day, end_year, end_month, end_day;
-				gtk_calendar_get_date((GtkCalendar *)end_calendar,
-					&end_year, &end_month, &end_day);
-				gtk_calendar_get_date((GtkCalendar *)start_calendar,
-					&start_year, &start_month, &start_day);
-				sprintf(start_str,"%04d-%02d-%02d",start_year, start_month + 1, start_day);
-				sprintf(end_str, "%04d-%02d-%02d", end_year, end_month + 1, end_day);
-				export_adif(path, start_str, end_str);
-				printf("saved logs from %s to %s to file %s\n", start_str, end_str, path);
-			}
+	// Show all widgets
+	gtk_widget_show_all(dialog);
+	gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+	if (response == GTK_RESPONSE_OK) {
+		char path[1000], start_str[20], end_str[20];
+		if (get_filename(path) != -1) {
+			guint start_year, start_month, start_day, end_year, end_month, end_day;
+			gtk_calendar_get_date((GtkCalendar*)end_calendar,
+				&end_year, &end_month, &end_day);
+			gtk_calendar_get_date((GtkCalendar*)start_calendar,
+				&start_year, &start_month, &start_day);
+			snprintf(start_str, sizeof(start_str), "%04d-%02d-%02d", start_year, start_month + 1, start_day);
+			snprintf(end_str, sizeof(end_str), "%04d-%02d-%02d", end_year, end_month + 1, end_day);
+			export_adif(path, start_str, end_str);
+			printf("saved logs from %s to %s to file %s\n", start_str, end_str, path);
 		}
+	}
     gtk_widget_destroy(dialog);
 }
 
@@ -829,7 +832,7 @@ int edit_qso(char *qso_id, char *freq, char *mode, char *callsign, char *rst_sen
     GtkWidget *ok_button, *cancel_button;
 		char title[20];
 
-		sprintf(title, "Edit QSO %s", qso_id);
+	snprintf(title, sizeof(title), "Edit QSO %s", qso_id);
 
     dialog = gtk_dialog_new_with_buttons(title, NULL,
     	GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -987,32 +990,33 @@ int logbook_fill(int from_id, int count, const char *query){
 	//add to the bottom of the logbook
 	if (from_id > 0){
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where (callsign_recv LIKE '%s%%' AND id < %d) ",
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where (callsign_recv LIKE '%s%%' AND id < %d) ",
 				query, from_id);
 		else
-			sprintf(statement, "select * from logbook where id < %d ", from_id);
+			snprintf(statement, sizeof(statement), "select * from logbook where id < %d ", from_id);
 	}
 	//last 200 QSOs
 	else if (from_id == 0){
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where callsign_recv LIKE '%s%%' ", query);
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where callsign_recv LIKE '%s%%' ",
+				query);
 		else
 			strcpy(statement, "select * from logbook ");
 	}
 	//latest QSOs after from_id (top of the log)
 	else {
 		if (query)
-			sprintf(statement, "select * from logbook "
-				"where (callsign_recv LIKE '%s%%' AND id > %d) ",
+			snprintf(statement, sizeof(statement), "select * from logbook "
+							   "where (callsign_recv LIKE '%s%%' AND id > %d) ",
 				query, -from_id);
 		else
-			sprintf(statement, "select * from logbook where id > %d ", -from_id);
+			snprintf(statement, sizeof(statement), "select * from logbook where id > %d ", -from_id);
 	}
 
 	char stmt_count[100];
-	sprintf(stmt_count, "ORDER BY id DESC LIMIT %d;", count);
+	snprintf(stmt_count, sizeof(stmt_count), "ORDER BY id DESC LIMIT %d;", count);
 	strcat(statement, stmt_count);
 	//printf("[%s]\n", statement);
 	sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
@@ -1102,8 +1106,8 @@ void delete_button_clicked(GtkWidget *entry, gpointer tree_view) {
  	int response = gtk_dialog_run (GTK_DIALOG (dialog));
 	if (response == GTK_RESPONSE_YES){
 		char statement[100], *err_msg;
-		sprintf(statement, "DELETE FROM logbook WHERE id='%s';", qso_id);
-		sqlite3_exec(db, statement, 0,0, &err_msg);
+		snprintf(statement, sizeof(statement), "DELETE FROM logbook WHERE id='%s';", qso_id);
+		sqlite3_exec(db, statement, 0, 0, &err_msg);
 	}
  	gtk_widget_destroy (dialog);
 	g_free(qso_id);
@@ -1134,7 +1138,7 @@ void edit_button_clicked(GtkWidget *entry, gpointer tree_view) {
 
 	if (edit_qso(qso_id, freq, mode, callsign, rst_sent, exchange_sent, rst_recv, exchange_recv, comment)){
 		char statement[1000], *err_msg;
-		sprintf(statement,
+		snprintf(statement, sizeof(statement),
 			"UPDATE logbook SET mode = '%s', freq = '%s', callsign_recv = '%s', rst_sent = '%s', "
 			"exch_sent = '%s',rst_recv = '%s', exch_recv = '%s', comments = '%s' WHERE id = '%s'",
 			mode, freq, callsign, rst_sent, exchange_sent, rst_recv, exchange_recv,
@@ -1175,7 +1179,7 @@ void on_row_activated(GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColum
 
 	if (edit_qso(qso_id, freq, mode, callsign, rst_sent, exchange_sent, rst_recv, exchange_recv, comment)){
 		char statement[1000], *err_msg;
-		sprintf(statement,
+		snprintf(statement, sizeof(statement),
 			"UPDATE logbook SET mode = '%s', freq = '%s', callsign_recv = '%s', rst_sent = '%s', "
 			"exch_sent = '%s',rst_recv = '%s', exch_recv = '%s', comments = '%s' WHERE id = '%s'",
 			mode, freq, callsign, rst_sent, exchange_sent, rst_recv, exchange_recv,
