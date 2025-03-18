@@ -2193,7 +2193,7 @@ void draw_waterfall(struct field *f, cairo_t *gfx)
 	// This gives good results as it's averaged, hence less noisy
 	// Smoothly adjust the waterfall offset
 	wf_offset += ((sp_baseline + 40)*2 - wf_offset) / 10;
-	
+
 	// Draw the updated waterfall
 	gdk_cairo_set_source_pixbuf(gfx, waterfall_pixbuf, f->x, f->y);
 	cairo_paint(gfx);
@@ -3280,8 +3280,8 @@ static void layout_ui()
 		//field_move("FT8_AUTO", 550, y2 - 47, 50, 45);
 		//field_move("TX_PITCH", 600, y2 - 47, 73, 45);
 		//field_move("SIDETONE", 675, y2 - 47, 73, 45);
-    
-    // Reformat 2 lines for macro button  W9JES 
+
+    // Reformat 2 lines for macro button  W9JES
 		y1 = y2 - 97;
 		field_move("FT8_TX1ST", 375, y1, 75, 45);
 		field_move("FT8_AUTO", 450, y1, 75, 45);
@@ -3308,7 +3308,7 @@ static void layout_ui()
 		waterfall_height = y2 - y1 - (default_spectrum_height + 105);
 		if (waterfall_height < MIN_WATERFALL_HEIGHT)
 			waterfall_height = MIN_WATERFALL_HEIGHT;
-      
+
 		if (!strcmp(field_str("SPECT"), "FULL"))
 		{
 			field_move("CONSOLE", 1000, -1500, 350, y2 - y1 - 55);
@@ -3335,7 +3335,7 @@ static void layout_ui()
 		field_move("CW_DELAY", 225, y1, 75, 45);
 		field_move("CW_INPUT", 375, y1, 75, 45);
 		field_move("SIDETONE", 450, y1, 75, 45);
-		field_move("MACRO", 525, y1, 75, 45); 
+		field_move("MACRO", 525, y1, 75, 45);
 		field_move("SPECT", 752, y1, 45, 45);
 		y1 += 50;
 		field_move("F1", 5, y1, 70, 45);
