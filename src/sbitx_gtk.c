@@ -1332,12 +1332,6 @@ void write_to_remote_app(int style, char *text)
 
 void write_console(int style, char *raw_text)
 {
-	/*char directory[PATH_MAX];
-	char *path = getenv("HOME");
-	strcpy(directory, path);
-	strcat(directory, "/sbitx/data/display_log.txt");
-	*/
-
 	char *text;
 	char decorated[1000];
 	if (strlen(raw_text) == 0)
@@ -1374,15 +1368,19 @@ void write_console(int style, char *raw_text)
 	if (strlen(text) == 0)
 		return;
 
-	/*
-		//write to the scroll
-		FILE *pf = fopen(directory, "a");
-		if (pf){
+	// write to the console log
+	// TODO if enabled
+	{
+		char log_path[PATH_MAX];
+		sprintf(log_path, "%s/sbitx/data/display_log.txt", getenv("HOME"));
+		FILE *pf = fopen(log_path, "a");
+		if (pf) {
 			fwrite(text, strlen(text), 1, pf);
 			fclose(pf);
 			pf = NULL;
 		}
-	*/
+	}
+
 	write_to_remote_app(style, raw_text);
 
 	int console_line_max = MIN(console_cols, MAX_LINE_LENGTH);
