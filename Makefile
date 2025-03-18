@@ -1,6 +1,7 @@
 TARGET = sbitx
 SOURCES = $(wildcard src/*.c)
 OBJECTS = $(SOURCES:.c=.o)
+FFTOBJ = ft8_lib/.build/fft/kiss_fft.o ft8_lib/.build/fft/kiss_fftr.o
 HEADERS = $(wildcard src/*.h)
 CFLAGS = -g `pkg-config --cflags gtk+-3.0` -I.
 LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 -lnsl -lrt -lixp ft8_lib/libft8.a `pkg-config --libs gtk+-3.0`
@@ -9,7 +10,7 @@ LINK = gcc
 STRIP = strip
 
 $(TARGET): $(OBJECTS) ft8_lib/libft8.a
-	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(LIBPATH) $(LIBS)
+	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(FFTOBJ) $(LIBPATH) $(LIBS)
 
 .c.o: $(HEADERS)
 	$(CC) -c $(CFLAGS) $(DEBUGFLAGS) $(INCPATH) -o $@ $<
