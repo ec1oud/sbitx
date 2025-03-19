@@ -1642,9 +1642,9 @@ function deco_strip(text) {
     }
 
 // Style codes of interest - if present the caller / grid is not found in the log
-const FF_MYCALL = 16;
-const FF_CALLER = 17;
-const FF_GRID = 18;
+const STYLE_MYCALL = 16;
+const STYLE_CALLER = 17;
+const STYLE_GRID = 18;
 function deco_get_style(text) {
 	let i = text.indexOf('#');
 	if (i >= 0 && text.length > i+1) {
@@ -1655,14 +1655,14 @@ function deco_get_style(text) {
 function deco_to_span(text) {
 	let jclass = "";
 	switch (deco_get_style(text)) {
-		case FF_CALLER:
+		case STYLE_CALLER:
 			jclass = "ft8-new-caller";
 			break;
-		case FF_GRID:
+		case STYLE_GRID:
 			jclass = "ft8-new-grid";
 			GRIDMAP.gridIdNotLogged(text.substring(2));
 			break;	
-		case FF_MYCALL:
+		case STYLE_MYCALL:
 			jclass = "wsjtx-mycallsign";
 			break;
 		default:
