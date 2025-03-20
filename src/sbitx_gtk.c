@@ -346,32 +346,23 @@ static struct font_style *set_style(cairo_t *gfx, int font_entry)
 	cairo_set_font_size(gfx, s->height);
 	return s;
 }
-static void draw_text(cairo_t *gfx, int x, int y, char *text, int font_entry)
+
+/*!
+	Draw null-terminated \a text at position \a x, \a y
+	using font and color looked up at index \a font_entry in font_table.
+	Returns the width in pixels, as drawn.
+*/
+static int draw_text(cairo_t *gfx, int x, int y, char *text, int font_entry)
 {
+	if (!text || !text[0])
+		return 0;
 	struct font_style *s = set_style(gfx, font_entry);
+	cairo_text_extents_t ext;
+	cairo_text_extents(gfx, text, &ext);
 	cairo_move_to(gfx, x, y + s->height);
-	char *p = text;
-	char ch[2];
-	bool font_ready = true;
-	ch[1] = 0;
-	while (*p)
-	{
-		ch[0] = *p;
-		if (!font_ready)
-		{
-			s = set_style(gfx, *p - 'A');
-			font_ready = true;
-		}
-		else if (*p != '#' && font_ready)
-		{
-			cairo_show_text(gfx, ch);
-		}
-		else if (*p == '#')
-		{
-			font_ready = false;
-		}
-		p++;
-	}
+	cairo_show_text(gfx, text);
+	//~ printf("draw_text %d,%d style %d, w %d px '%s'\n", x, y, font_entry, (int)ext.x_advance, text);
+	return (int)ext.x_advance;
 }
 
 static void fill_rect(cairo_t *gfx, int x, int y, int w, int h, int color)
