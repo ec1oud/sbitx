@@ -243,7 +243,7 @@ struct encoder enc_a, enc_b;
 #define MAX_CONSOLE_BUFFER 10000
 #define MAX_LINE_LENGTH 128
 #define MAX_CONSOLE_LINES 500
-static int console_cols = 50;
+static int console_cols = 48; // intentionally low initial guess
 struct console_line
 {
 	char text[MAX_LINE_LENGTH];
@@ -1411,9 +1411,10 @@ void draw_console(cairo_t *gfx, struct field *f)
 
 	rect(gfx, f->x, f->y, f->width, f->height, COLOR_CONTROL_BOX, 1);
 
-	// estimate!
-	int char_width = measure_text(gfx, "01234567890123456789", f->font_index) / 20;
-	console_cols = MIN(f->width / char_width, MAX_LINE_LENGTH);
+	// correct the initial guess with a better estimate, assuming the font is fixed-pitch
+	if (console_cols == 48)
+		console_cols = MIN(f->width / (measure_text(gfx, "01234567890123456789", f->font_index) / 20), MAX_LINE_LENGTH);
+
 	int y = f->y;
 	int j = 0;
 
