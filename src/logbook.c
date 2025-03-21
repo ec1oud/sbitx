@@ -1246,6 +1246,8 @@ void logbook_list_open(){
     	list_store = gtk_list_store_new(11, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       	G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       	G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING);
+	else
+		clear_tree(list_store);
 
     // Create a tree view and set up columns with headings aligned to the left
     tree_view = gtk_tree_view_new_with_model(GTK_TREE_MODEL(list_store));
