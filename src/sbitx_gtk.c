@@ -505,8 +505,6 @@ char *place_char = "=";
 
 #define VFO_A 0
 #define VFO_B 1
-// int	vfo_a_freq = 7000000;
-// int	vfo_b_freq = 14000000;
 char vfo_a_mode[10];
 char vfo_b_mode[10];
 
@@ -914,7 +912,7 @@ struct field main_controls[] = {
 	 "", 300, 3000, 50, 0},
 	{"#bw_cw", NULL, 1000, -1000, 50, 50, "BW_CW", 40, "400", FIELD_NUMBER, STYLE_FIELD_VALUE,
 	 "", 300, 3000, 50, 0},
-	{"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "3000", FIELD_NUMBER, STYLE_FIELD_VALUE,
+	{"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "4000", FIELD_NUMBER, STYLE_FIELD_VALUE,
 	 "", 300, 3000, 50, 0},
 	{"#bw_am", NULL, 1000, -1000, 50, 50, "BW_AM", 40, "5000", FIELD_NUMBER, STYLE_FIELD_VALUE,
 	 "", 300, 6000, 50, 0},
@@ -1781,6 +1779,7 @@ void save_user_settings(int forced)
 	for (i = 0; active_layout[i].cmd[0] > 0; i++)
 	{
 		fprintf(f, "%s=%s\n", active_layout[i].cmd, active_layout[i].value);
+		//printf("%s=%s\n", active_layout[i].cmd, active_layout[i].value);
 	}
 
 	// now save the band stack
@@ -3228,7 +3227,6 @@ void draw_dial(struct field *f, cairo_t *gfx)
 		if (!in_tx)
 		{
 			strcpy(temp_str, vfo_a->value);
-			// sprintf(temp_str, "%d", vfo_a_freq);
 			sprintf(buff, "A:%s", freq_with_separators(temp_str));
 			draw_text(gfx, f->x + 5, f->y + 1, buff, STYLE_LARGE_FIELD);
 			sprintf(buff, "B:%s", freq_with_separators(f->value));
@@ -3237,7 +3235,6 @@ void draw_dial(struct field *f, cairo_t *gfx)
 		else
 		{
 			strcpy(temp_str, vfo_a->value);
-			// sprintf(temp_str, "%d", vfo_a_freq);
 			sprintf(buff, "A:%s", freq_with_separators(temp_str));
 			draw_text(gfx, f->x + 5, f->y + 1, buff, STYLE_LARGE_FIELD);
 			sprintf(buff, "TX:%s", freq_with_separators(f->value));
@@ -4432,8 +4429,10 @@ int do_tune_tx(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 		else{
 			puts("Turning off TUNE");
 			tx_off();
-			field_set("MODE", tune_tx_saved_mode);
-			update_field(get_field("r1:mode"));
+			if (tune_tx_saved_mode[0]) {
+				field_set("MODE", tune_tx_saved_mode);
+				update_field(get_field("r1:mode"));
+			}
 		}
 	}
 	return 0;
@@ -6660,6 +6659,7 @@ static void zbitx_logs(){
 		return;
 	while(fgets(row, sizeof(row), pf)){
 		sprintf(row_response, "QSO %s}", row);
+		printf(row_response);
 		i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(row_response), row_response);
 	}
 	fclose(pf);
@@ -6733,6 +6733,8 @@ void zbitx_poll(int all){
 		else{
 			if (!strncmp(buff, "OPEN", 4))
 				update_logs = 1;
+			if (isupper(buff[0]))
+				printf("remote exec: %s\n", buff);
 			remote_execute(buff);
 		}
 	}
@@ -7370,6 +7372,14 @@ void do_control_action(char *cmd)
 			field_set("MODE", modestore);
 			field_set("DRIVE", powerstore);
 		}
+		/*
+		puts("Turning off TUNE");
+		tx_off();
+		if (tune_tx_saved_mode[0]){
+			field_set("MODE", tune_tx_saved_mode);
+			update_field(get_field("r1:mode"));
+		}
+		*/
 	}
 	// Automatic turn-off check (this should be called periodically)
 	if (tune_on_invoked)
@@ -8190,15 +8200,12 @@ int main(int argc, char *argv[])
 
 	strcpy(vfo_a_mode, "USB");
 	strcpy(vfo_b_mode, "LSB");
-	strcpy(tune_tx_saved_mode, "USB");
-	set_field("#mycallsign", "NOBODY");
-	// vfo_a_freq = 14000000;
-	// vfo_b_freq = 7000000;
 
 	f = get_field("spectrum");
 	update_field(f);
 	set_volume(20000000);
 
+	set_field("#mycallsign", "NOBODY");
 	set_field("r1:freq", "7000000");
 	set_field("r1:mode", "USB");
 	set_field("tx_gain", "24");
@@ -8255,7 +8262,8 @@ int main(int argc, char *argv[])
 	field_set("KBD", "OFF");
 	field_set("ePTT", "OFF");
 	field_set("MENU", "OFF");
-	field_set("TUNE", "OFF");
+	if (!strcmp(field_str("TUNE"), "ON"))
+		field_set("TUNE", "OFF");
 	field_set("NOTCH", "OFF");
 	field_set("VFOLK", "OFF");
 
@@ -8277,6 +8285,7 @@ int main(int argc, char *argv[])
 	rtc_read();
 	zbitx_init();
 
+	printf("BW_CW is %s\n", field_str("BW_CW"));
 	if (zbitx_available)
 		zbitx_poll(1); // send all the field values
 
