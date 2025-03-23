@@ -1799,6 +1799,9 @@ void enter_qso()
 	write_console(STYLE_LOG, buff);
 	printf(buff);
 	update_logs = 1;
+	//wipe the call if not FT8
+	if (strcmp(field_str("MODE"), "FT8"))
+		call_wipe();
 }
 
 static int get_band_stack_index(const char *p_value)
@@ -7137,6 +7140,7 @@ void zbitx_poll(int all){
 			delay(10);
 		}
 	}
+	last_update = this_time;
 
 	//check if the console q has any new updates
 	while (q_length(&q_zbitx_console) > 0){
@@ -7165,7 +7169,12 @@ void zbitx_poll(int all){
 		update_logs = 0;
 	}
 
-	if(i2cbb_read_i2c_block_data(0xa, 0, 100, buff) != -1){
+	int  reply_length;
+
+	if ((reply_length = i2cbb_read_rll(0xa, buff)) != -1){
+	//zero terminate the reply
+		buff[reply_length] = 0;
+
 		if(!strncmp(buff, "FT8 ", 4)){
 			char ft8_message[100];
 			hd_strip_decoration(ft8_message, buff + 4);
@@ -7175,8 +7184,6 @@ void zbitx_poll(int all){
 		else{
 			if (!strncmp(buff, "OPEN", 4))
 				update_logs = 1;
-			/* if (isupper(buff[0]))
-				printf("remote exec: %s\n", buff);*/
 			remote_execute(buff);
 		}
 	}
@@ -7285,7 +7292,7 @@ gboolean ui_tick(gpointer gook)
 			modem_poll(mode_id(get_field("r1:mode")->value));
 	}
 
-	int tick_count = 100;
+	int tick_count = 50;
 
 	switch (mode_id(field_str("MODE")))
 	{

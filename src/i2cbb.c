@@ -364,3 +364,23 @@ int32_t i2cbb_read_i2c_block_data(uint8_t i2c_address, uint8_t command, uint8_t 
 	i2c_stop_cond();
 	return length;
 }
+
+int32_t i2cbb_read_rll(uint8_t i2c_address, uint8_t* values) {
+	uint8_t address = (i2c_address << 1) | 0;
+
+	address = (i2c_address << 1) | 1;
+	if (i2c_write_byte(1, 0, address)){
+		i2c_stop_cond();
+		return -1;
+	}
+
+	//static uint8_t i2c_read_byte(int nack, int send_stop)
+	uint8_t i = 0;
+	uint8_t length = i2c_read_byte(0,0);
+	for (i = 0; i < length-1; i++)
+		values[i] = i2c_read_byte(0,0);
+	values[i] = i2c_read_byte(1,1);
+
+	i2c_stop_cond();
+	return length;
+}
