@@ -7164,6 +7164,12 @@ void zbitx_poll(int all){
 	delay(1);
 	i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
 
+	//transmit in_tx
+	sprintf(buff, "IN_TX %d}", in_tx);
+	delay(1);
+	i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
+
+
 	if(update_logs){
 		zbitx_logs();
 		update_logs = 0;
@@ -8284,7 +8290,7 @@ void cmd_exec(char *cmd)
 	}
 	else if (!strcmp(exec, "power"))
 		set_field("#fwdpower", args);
-	else if (!strcmp(exec, "vswr"))
+	else if (!strcmp(exec, "vswr") && in_tx)
 		set_field("#vswr", args);
 	else if (!strcmp(exec, "vbatt"))
 		set_field("#batt", args);
