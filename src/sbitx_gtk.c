@@ -427,6 +427,7 @@ struct field
 	int section;
 	char is_dirty;
 	char update_remote;
+	unsigned int updated_at;
 	void *data;
 };
 
@@ -1059,7 +1060,12 @@ struct field *get_field(const char *cmd)
 	return NULL;
 }
 
-// set the field directly to a particuarl value, programmatically
+void field_init(){
+	for (int i = 0; active_layout[i].cmd[i] > 0; i++)
+		active_layout[i].updated_at= 0;
+}
+
+//set the field directly to a particular value, programmatically
 int set_field(const char *id, const char *value)
 {
 	struct field *f = get_field(id);
@@ -1204,6 +1210,7 @@ int get_field_value_by_label(const char *label, char *value)
 	return 0;
 }
 
+// prepare to send the latest value of a field to the remote head
 int remote_update_field(int i, char *text)
 {
 	struct field *f = active_layout + i;
@@ -1418,8 +1425,10 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	}
 
 	struct field *f = get_field("#console");
-	if (f)
+	if (f) {
 		f->is_dirty = 1;
+		f->updated_at = millis();
+	}
 }
 
 void draw_console(cairo_t *gfx, struct field *f)
@@ -1539,6 +1548,7 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 			l += MAX_CONSOLE_LINES;
 		console_selected_line = l;
 		f->is_dirty = 1;
+		f->updated_at = millis();
 		return 1;
 		break;
 	case GDK_BUTTON_RELEASE:
@@ -1550,6 +1560,7 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 			ft8_process(ft8_message, FT8_START_QSO);
 		}
 		f->is_dirty = 1;
+		f->updated_at = millis();
 		return 1;
 		break;
 	case FIELD_EDIT:
@@ -4064,6 +4075,7 @@ void update_field(struct field *f)
 	if (f->y >= 0)
 		f->is_dirty = 1;
 	f->update_remote = 1;
+	f->updated_at = millis();
 }
 
 static void hover_field(struct field *f)
@@ -4090,6 +4102,7 @@ static void edit_field(struct field *f, int action)
 	{
 		f->is_dirty = 1;
 		f->update_remote = 1;
+		f->updated_at = millis();
 		if (f->fn(f, NULL, FIELD_EDIT, action, 0, 0))
 			return;
 	}
@@ -4182,6 +4195,7 @@ static void edit_field(struct field *f, int action)
 	do_control_action(buff);
 	f->is_dirty = 1;
 	f->update_remote = 1;
+	f->updated_at = millis();
 	//	update_field(f);
 	settings_updated++;
 }
@@ -4600,6 +4614,7 @@ int do_status(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		strcpy(f->value, buff);
 		f->is_dirty = 1;
 		f->update_remote = 1;
+		f->updated_at = millis();
 		sprintf(buff, "sBitx %s %s %04d/%02d/%02d %02d:%02d:%02dZ",
 				get_field("#mycallsign")->value, get_field("#mygrid")->value,
 				tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
@@ -4657,6 +4672,7 @@ int do_text(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		}
 		f->is_dirty = 1;
 		f->update_remote = 1;
+		f->updated_at = millis();
 		f_last_text = f;
 		return 1;
 	}
@@ -6279,8 +6295,10 @@ void redraw()
 	struct field *f;
 	f = get_field("#console");
 	f->is_dirty = 1;
+	f->updated_at = millis();
 	f = get_field("#text_in");
 	f->is_dirty = 1;
+	f->updated_at = millis();
 }
 
 /* hardware specific routines */
@@ -7080,7 +7098,7 @@ static void zbitx_logs(){
 		return;
 	while(fgets(row, sizeof(row), pf)){
 		sprintf(row_response, "QSO %s}", row);
-		printf(row_response);
+		//printf(row_response);
 		i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(row_response), row_response);
 	}
 	fclose(pf);
@@ -7088,15 +7106,18 @@ static void zbitx_logs(){
 
 void zbitx_poll(int all){
 	char buff[3000];
+	static unsigned int last_update = 0;
 
 	int count = 0;
 	int e = 0;
 	int retry;
+	unsigned int this_time = millis();
+
 	for (int i = 0; active_layout[i].cmd[0] > 0; i++){
 		struct field *f = active_layout+i;
 		if (!strcmp(f->label, "WATERFALL") || !strcmp(f->label, "SPECTRUM"))
 			continue;
-		if (all || f->update_remote){
+		if (all || /* f->update_remote */ f->updated_at >  last_update){
 			sprintf(buff, "%s %s}", f->label, f->value);
 
 			retry = 3;
@@ -7154,11 +7175,12 @@ void zbitx_poll(int all){
 		else{
 			if (!strncmp(buff, "OPEN", 4))
 				update_logs = 1;
-			if (isupper(buff[0]))
-				printf("remote exec: %s\n", buff);
+			/* if (isupper(buff[0]))
+				printf("remote exec: %s\n", buff);*/
 			remote_execute(buff);
 		}
 	}
+	last_update = this_time;
 }
 
 void zbitx_init()
@@ -7505,7 +7527,8 @@ int get_tx_data_byte(char *c)
 	}
 	f->is_dirty = 1;
 	f->update_remote = 1;
-	// update_field(f);
+	f->updated_at = millis();
+	//update_field(f);
 	return length;
 }
 
@@ -8609,6 +8632,8 @@ int main(int argc, char *argv[])
 
 	struct field *f;
 	f = active_layout;
+	field_init();
+
 
 	hd_createGridList();
 	// initialize the modulation display
