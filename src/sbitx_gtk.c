@@ -44,6 +44,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "modem_ft8.h"
 #include "i2cbb.h"
 #include "webserver.h"
+#include "9psrv.h"
 #include "logbook.h"
 #include "hist_disp.h"
 #include "ntputil.h"
@@ -6980,6 +6981,7 @@ void ui_init(int argc, char *argv[])
 	layout_ui();
 	focus_field(get_field("r1:volume"));
 	webserver_start();
+	start_9p();
 	f_last_text = get_field_by_label("TEXT");
 }
 
