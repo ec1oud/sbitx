@@ -55,6 +55,7 @@ static char
 
 /* Global Vars */
 static IxpServer server;
+static pid_t pid = 0;
 static char *user;
 static int debuglevel = 1;
 
@@ -423,12 +424,16 @@ getaddr(char *mountaddr, char **ip, char **port) {
 	return strtoul(*port, 0, 0);
 }
 
+void kill_9p()
+{
+	printf("kill_9p (pid %d)\n", pid);
+	kill(pid, SIGINT);
+}
+
 void start_9p()
 {
-	printf("start_9p\n");
-
 	if(!(user = getenv("USER"))) {
-		fatal("$USER not set\n");
+		fatal("start_9p: $USER not set\n");
 		return;
 	}
 
@@ -440,7 +445,7 @@ void start_9p()
 		char host[NI_MAXHOST];
 
 		if (getifaddrs(&ifaddr) == -1) {
-			perror("getifaddrs");
+			perror("start_9p: getifaddrs");
 			return;
 		}
 
@@ -451,11 +456,11 @@ void start_9p()
 			if (strncmp(ifa->ifa_name, "lo", 2) && ifa->ifa_addr->sa_family==AF_INET) {
 				int s=getnameinfo(ifa->ifa_addr,sizeof(struct sockaddr_in),host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 				if (s != 0) {
-					printf("getnameinfo() failed: %s\n", gai_strerror(s));
+					printf("start_9p: getnameinfo() failed: %s\n", gai_strerror(s));
 					return;
 				}
 				sprintf(listen_addr, "tcp!%s!1564", host);
-				printf("%s: %s; will listen on %s\n",ifa->ifa_name, host, listen_addr);
+				printf("start_9p found %s: %s; will listen on %s\n",ifa->ifa_name, host, listen_addr);
 				break;
 			}
 		}
@@ -465,16 +470,20 @@ void start_9p()
 
 	int fd = ixp_announce(listen_addr);
 	if(fd < 0)
-		fatal("%s\n", errstr);
+		fatal("start_9p: ixp_announce: %s\n", errstr);
 
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);
-	int f = fork();
-	if (f < 0)
-		errx(1, "fork!");
-	if (!f) {
+	pid = fork();
+	if (pid < 0)
+		errx(1, "start_9p: fork");
+	if (pid) {
+		// parent process
+		int r = atexit(kill_9p);
+		if (r)
+			errx(1, "start_9p: atexit");
+		printf("start_9p: done (pid %d)\n", pid);
+	} else {
 		// child process
 		ixp_serverloop(&server);
 	}
-
-	printf("start_9p: done\n");
 }
