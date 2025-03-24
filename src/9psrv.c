@@ -126,7 +126,7 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text filter %d len %d mtime %u\n", df->semantic_filter, s->length, s->mtime);
+	debug("stat_text '%s' filter %d len %d mtime %u\n", df->name, df->semantic_filter, s->length, s->mtime);
 
 	// side-effect: usually the console has a newer mtime than last time;
 	// so update mtimes on all 'text' files and their parent dirs, recursively.
@@ -135,7 +135,7 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 }
 
 static int read_text(const Devfile *df, char *out, int len, int offset) {
-	debug("read_text %s %d %d\n", df->name, len, offset);
+	debug("read_text '%s' len %d offset %d\n", df->name, len, offset);
 	return get_console_text(out, len, offset, df->semantic_filter);
 }
 

@@ -6359,23 +6359,32 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 {
 	// TODO binary search
 	int line = 0;
-	for (; line < MAX_CONSOLE_LINES && console_stream[line].char_pos_start < from_char; ++line);
-		//~ printf("checked line %d: starts @ %d\n", line, console_stream[line].char_pos_start);
+	int filtered_pos = 0;
+	for (; line < MAX_CONSOLE_LINES && filtered_pos < from_char; ++line) {
+		if (!filter || (console_stream[line].spans[0].start_column == 0
+				&& console_stream[line].spans[0].semantic == filter))
+			filtered_pos += console_stream[line].len;
+		//~ debug("checked line %d: range %d -> %d filtered: -> %d\t'%s'\n", line, console_stream[line].char_pos_start,
+			//~ console_stream[line].char_pos_start + console_stream[line].len, filtered_pos, console_stream[line].text);
+	}
 	if (line >= MAX_CONSOLE_LINES)
 		return 0;
-	if (from_char > console_stream[0].len && console_stream[line].char_pos_start >= from_char)
+	if (from_char > console_stream[0].len && filtered_pos > from_char)
 		--line;
 	// hopefully line now points to the line where from_char can be found
 	char *out = buf;
 	const char *end = buf + max;
-//~ printf("copying console text starting from char %d line %d: max %d\n", from_char, line, end - out);
+	//~ debug("copying console text starting from char %d line %d: max %d\n", from_char, line, end - out);
 	for (; line <= console_current_line && out < end; ++line) {
-//~ printf("copying console text from line %d with len %d: max %d\n", line, console_stream[line].len, end - out);
+		//~ debug("        console text from line %d range %d -> %d: outpos %d max %d\n",
+			//~ line, console_stream[line].char_pos_start,
+			//~ console_stream[line].char_pos_start + console_stream[line].len, out - buf, end - out);
 		if (!filter || (console_stream[line].spans[0].start_column == 0
-				&& console_stream[line].spans[0].semantic == filter))
+				&& console_stream[line].spans[0].semantic == filter)) {
 			out = stpncpy(out, console_stream[line].text, MIN(console_stream[line].len, end - out));
-		if (out < end)
-			*out++ = '\n';
+			if (out < end)
+				*out++ = '\n';
+		}
 	}
 	return out - buf;
 }
