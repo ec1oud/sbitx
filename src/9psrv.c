@@ -55,6 +55,7 @@ struct Devfile {
 	mode_t	mode;
 	time_t atime;
 	time_t mtime;
+	uint32_t version;
 };
 
 typedef struct FidAux FidAux;
@@ -112,7 +113,7 @@ static void write_field(const char *name, const char *val, int len, int offset) 
 	set_field(name, val);
 }
 
-static void update_console_mtimes(time_t mtime);
+static void update_console_mtimes_and_sizes(time_t mtime);
 
 static void stat_text(IxpStat *s, const Devfile *df) {
 	s->type = 0;
@@ -121,7 +122,7 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
 	s->qid.type = 0;
 	s->qid.path = df->id; // fake "inode"
-	s->qid.version = 0;
+	s->qid.version = df->version;
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
@@ -135,7 +136,7 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	// side-effect: usually the console has a newer mtime than last time;
 	// so update mtimes on all 'text' files and their parent dirs, recursively.
 	// A better design might be a console callback, but this way seems cheaper for now.
-	update_console_mtimes(s->mtime);
+	update_console_mtimes_and_sizes(s->mtime);
 }
 
 static int read_text(const Devfile *df, char *out, int len, int offset) {
@@ -145,27 +146,27 @@ static int read_text(const Devfile *df, char *out, int len, int offset) {
 
 #define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
-	{ 0, "/", -1, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1, "settings", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2, "callsign", 1, SEM_NONE, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
-	{ 3, "grid", 1, SEM_NONE, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
-	{ 40, "text", 0, SEM_NONE, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0 },
-	{ 100, "modes", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	//~ { 101, "ssb", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	//~ { 1000, "1", 101, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	//~ { 1001, "frequency", 1000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
-	//~ { 1002, "if_gain", 1000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
-	{ 102, "ft8", 100, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2000, "1", 102, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2001, "frequency", 2000, SEM_NONE, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
-	{ 2002, "if_gain", 2000, SEM_NONE, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
-	{ 2003, "received", 2000, STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
-	//~ { 2004, "received.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
-	{ 2005, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
+	{ 0, "/", -1, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ 1, "settings", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ 2, "callsign", 1, SEM_NONE, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0, 0 },
+	{ 3, "grid", 1, SEM_NONE, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
+	{ 40, "text", 0, SEM_NONE, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ 100, "modes", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { 101, "ssb", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { 1000, "1", 101, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { 1001, "frequency", 1000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+	//~ { 1002, "if_gain", 1000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+	{ 102, "ft8", 100, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ 2000, "1", 102, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ 2001, "frequency", 2000, SEM_NONE, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+	{ 2002, "if_gain", 2000, SEM_NONE, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+	{ 2003, "received", 2000, STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	//~ { 2004, "received.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ 2005, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
-static void update_console_mtimes(time_t mtime) {
+static void update_console_mtimes_and_sizes(time_t mtime) {
 	for (int f = devfiles_count - 1; f > 0; --f)
 		if (devfiles[f].dostat == stat_text) {
 			int parent_sought = devfiles[f].parent;
@@ -173,8 +174,12 @@ static void update_console_mtimes(time_t mtime) {
 				mtime, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
 			for (int j = f - 1; j >= 0; --j) {
 				if (devfiles[j].id == parent_sought) {
-					debug("   found %d '%s'\n", devfiles[j].id, devfiles[j].name);
-					devfiles[j].mtime = mtime;
+					if (mtime > devfiles[j].mtime) {
+						devfiles[j].mtime = mtime;
+						++devfiles[j].version;
+						debug("   found %d '%s', set mtime %u version %u\n",
+							devfiles[j].id, devfiles[j].name, devfiles[j].mtime, devfiles[j].version);
+					}
 					parent_sought = devfiles[j].parent;
 				}
 			}
@@ -258,7 +263,7 @@ static void dostat(IxpStat *s, const Devfile *df) {
 	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
 	s->qid.type = df->mode >> 24;
 	s->qid.path = df->id; // fake "inode"
-	s->qid.version = 0;
+	s->qid.version = df->version;
 	s->mode = df->mode;
 	s->atime = df->atime ? df->atime : start_time;
 	s->mtime = df->mtime ? df->mtime : start_time;
