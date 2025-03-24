@@ -1152,7 +1152,7 @@ int field_set(const char *label, const char *new_value)
 	update_field(f);
 }
 
-int get_field_value(char *cmd, char *value)
+int get_field_value(const char *cmd, char *value)
 {
 	struct field *f = get_field(cmd);
 	if (!f)
@@ -1161,7 +1161,7 @@ int get_field_value(char *cmd, char *value)
 	return 0;
 }
 
-int get_field_value_by_label(char *label, char *value)
+int get_field_value_by_label(const char *label, char *value)
 {
 	struct field *f = get_field_by_label(label);
 	if (!f)
@@ -1315,7 +1315,7 @@ int console_init_next_line()
 	return console_current_line;
 }
 
-void write_to_remote_app(int style, char *text)
+void write_to_remote_app(int style, const char *text)
 {
 	remote_write("{");
 	remote_write(text);
@@ -3901,7 +3901,7 @@ int do_waterfall(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 	return 0;
 }
 
-void remote_execute(char *cmd)
+void remote_execute(const char *cmd)
 {
 
 	if (q_remote_commands.overflow)
