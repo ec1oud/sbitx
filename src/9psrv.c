@@ -1,6 +1,7 @@
-/* Copyright ©2007 Ron Minnich <rminnich at gmail dot com>
+/* libixp and example Copyright ©2007 Ron Minnich <rminnich at gmail dot com>
  * Copyright ©2007-2010 Kris Maglione <maglione.k@gmail.com>
- * Copyright ©2025 Shawn Rutledge <s@ecloud.org>
+ * sbitx 9p implementation Copyright ©2025 Shawn Rutledge <s@ecloud.org>
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -25,6 +26,7 @@
 #include <errno.h>
 #include <ifaddrs.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +36,8 @@
 #include <unistd.h>
 
 #include <ixp_local.h>
+
+#include "sdr_ui.h"
 
 /* Datatypes */
 typedef struct Devfile Devfile;
@@ -90,9 +94,17 @@ static int read_dir(char *out, int len, int offset) {
 }
 
 static int read_freq(char *out, int len, int offset) {
-	if (offset >= 6) // TODO silly
+	static time_t last_read = 0;
+	static char val[12];
+	time_t now = time(nil);
+	if (now - last_read > 1) {
+		get_field_value("r1:freq", val);
+		last_read = now;
+	}
+	int vlen = strlen(val);
+	if (offset >= vlen)
 		return 0;
-	char *end = stpncpy(out, "14.078", len); // Plan 9: strecpy
+	char *end = stpncpy(out, val, len); // Plan 9: strecpy
 	return end - out;
 }
 
@@ -323,15 +335,14 @@ void fs_read(Ixp9Req *r) {
 }
 
 void fs_write(Ixp9Req *r) {
-	FidAux *f;
+	FidAux *f = r->fid->aux;
 
-	debug("fs_write(%p)\n", r);
+	debug("fs_write(%p) %s\n", r, f->file->name);
 
 	if(r->ifcall.twrite.count == 0) {
 		ixp_respond(r, nil);
 		return;
 	}
-	f = r->fid->aux;
 	// fs_write should not be called if the file is not open for reading
 	assert(!"Write called on an unwritable file");
 }
@@ -386,11 +397,10 @@ void kill_9p()
 	kill(pid, SIGINT);
 }
 
-void start_9p()
-{
+void *run_9p(void *arg) {
 	if(!(user = getenv("USER"))) {
 		fatal("start_9p: $USER not set\n");
-		return;
+		return nil;
 	}
 
     char listen_addr[NI_MAXHOST];
@@ -402,7 +412,7 @@ void start_9p()
 
 		if (getifaddrs(&ifaddr) == -1) {
 			perror("start_9p: getifaddrs");
-			return;
+			return nil;
 		}
 
 		for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
@@ -413,7 +423,7 @@ void start_9p()
 				int s=getnameinfo(ifa->ifa_addr,sizeof(struct sockaddr_in),host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 				if (s != 0) {
 					printf("start_9p: getnameinfo() failed: %s\n", gai_strerror(s));
-					return;
+					return nil;
 				}
 				sprintf(listen_addr, "tcp!%s!1564", host);
 				printf("start_9p found %s: %s; will listen on %s\n",ifa->ifa_name, host, listen_addr);
@@ -427,23 +437,22 @@ void start_9p()
 	int fd = ixp_announce(listen_addr);
 	if(fd < 0) {
 		perror(listen_addr);
-		fatal("start_9p: ixp_announce: %s\n", errstr);
+		return nil; // fatal("start_9p: ixp_announce: %s\n", errstr);
 	}
 
 	memset(open_fds, 0, sizeof(open_fds));
 	start_time = time(nil);
+
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);
-	pid = fork();
-	if (pid < 0)
-		errx(1, "start_9p: fork");
-	if (pid) {
-		// parent process
-		int r = atexit(kill_9p);
-		if (r)
-			errx(1, "start_9p: atexit");
-		printf("start_9p: done (pid %d)\n", pid);
-	} else {
-		// child process
-		ixp_serverloop(&server);
-	}
+	ixp_serverloop(&server);
+	return nil; // shouldn't get here
+}
+
+void start_9p() {
+	pthread_t listener_thread;
+    if (pthread_create(&listener_thread, NULL, run_9p, NULL) != 0) {
+        perror("Failed to create 9p listener thread");
+        exit(1);
+    }
+    pthread_detach(listener_thread); // Detach the thread to run independently
 }
