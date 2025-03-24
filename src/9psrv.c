@@ -94,13 +94,8 @@ static int size_read(const struct Devfile *df) {
 }
 
 static int read_field(const struct Devfile *df, char *out, int len, int offset) {
-	static time_t last_read = 0;
-	static char val[12];
-	time_t now = time_sbitx();
-	if (now - last_read > 1) {
-		get_field_value(df->read_name, val);
-		last_read = now;
-	}
+	char val[64];
+	get_field_value(df->read_name, val); // TODO unsafe: pass sizeof as len
 	int vlen = strlen(val);
 	if (offset >= vlen)
 		return 0;
