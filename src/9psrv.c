@@ -107,19 +107,19 @@ static int read_field(const char *name, char *out, int len, int offset) {
 
 static void write_field(const char *name, const char *val, int len, int offset) {
 	debug("write_field %s: '%s' %d %d\n", name, val, len, offset);
-	field_set(name, val);
+	set_field(name, val);
 }
 
 static Devfile devfiles[] = {
 	{ 0, "/", -1, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	{ 1, "settings", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2, "callsign", 1, read_field, "#mycallsign", write_field, "MYCALLSIGN", DMEXCL|0666, 0, 0 },
-	{ 3, "grid", 1, read_field, "#mygrid", write_field, "MYGRID", DMEXCL|0666, 0, 0 },
+	{ 2, "callsign", 1, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
+	{ 3, "grid", 1, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
 	{ 100, "modes", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
 	{ 101, "ssb", 100, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	{ 1000, "1", 101, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1001, "frequency", 1000, read_field, "r1:freq", write_field, "FREQ", DMEXCL|0666, 0, 0 },
-	{ 1002, "if_gain", 1000, read_field, "r1:gain", write_field, "IF", DMEXCL|0666, 0, 0 },
+	{ 1001, "frequency", 1000, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
+	{ 1002, "if_gain", 1000, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
 };
 static const int devfiles_count = 9;
 
@@ -389,8 +389,11 @@ void fs_write(Ixp9Req *r) {
 		rerrno(r, Enoperm);
 		return;
 	}
-	char *trimmed = trimwhitespace(r->ifcall.twrite.data);
-	debug("fs_write(%p) %s: %s %d %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	char buf[r->ifcall.twrite.count + 1];
+	char *end = stpncpy(buf, r->ifcall.twrite.data, r->ifcall.twrite.count);
+	*end = 0;
+	char *trimmed = trimwhitespace(buf);
+	debug("fs_write(%p) %s: '%s' %d %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
 	f->file->dowrite(f->file->write_name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
 	r->ofcall.rwrite.count = r->ifcall.twrite.count;
 	ixp_respond(r, nil);
