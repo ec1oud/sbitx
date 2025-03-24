@@ -87,8 +87,8 @@ int field_int(char *label);
 void write_console(sbitx_style style, const char *text);
 // write plain text, with semantically-tagged spans that imply styling
 void write_console_semantic(const char *text, const text_span_semantic *sem, int sem_count);
-int get_console_text(char *buf, int max, int from_char);
-int console_current_length();
+int get_console_text(char *buf, int max, int from_char, sbitx_style filter);
+int console_current_length(sbitx_style filter);
 time_t console_last_time();
 int web_get_console(char *buff, int max);
 int is_in_tx();

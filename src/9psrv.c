@@ -46,8 +46,9 @@ struct Devfile {
 	uint64_t id; // aka qid.path
 	char	*name;
 	int parent;
+	sbitx_style semantic_filter;
 	void	(*dostat)(IxpStat *s, const Devfile *df);
-	int	(*doread)(const char*, char*, int, int);
+	int	(*doread)(const Devfile *df, char*, int, int);
 	const char	*read_name;
 	void	(*dowrite)(const char*, const char*, int, int);
 	const char	*write_name;
@@ -86,17 +87,17 @@ static int debuglevel = 1;
 static time_t start_time;
 static char *argv0;
 
-static int size_read(int	(*doread)(const char *, char*, int, int), const char *name) {
+static int size_read(const struct Devfile *df) {
 	char buf[MAX_FILE_SIZE];
-	return doread(name, buf, MAX_FILE_SIZE, 0);
+	return df->doread(df, buf, MAX_FILE_SIZE, 0);
 }
 
-static int read_field(const char *name, char *out, int len, int offset) {
+static int read_field(const struct Devfile *df, char *out, int len, int offset) {
 	static time_t last_read = 0;
 	static char val[12];
 	time_t now = time(nil);
 	if (now - last_read > 1) {
-		get_field_value(name, val);
+		get_field_value(df->read_name, val);
 		last_read = now;
 	}
 	int vlen = strlen(val);
@@ -111,7 +112,6 @@ static void write_field(const char *name, const char *val, int len, int offset) 
 	set_field(name, val);
 }
 
-// TODO add up lengths of only lines with appropriate semantics (e.g. FT8)
 static void stat_text(IxpStat *s, const Devfile *df) {
 	s->type = 0;
 	s->dev = 0;
@@ -123,36 +123,38 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = console_current_length();
+	s->length = console_current_length(df->semantic_filter);
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text len %d mtime %u\n", s->length, s->mtime);
+	debug("stat_text filter %d len %d mtime %u\n", df->semantic_filter, s->length, s->mtime);
 }
 
-static int read_text(const char *name, char *out, int len, int offset) {
-	debug("read_text %s %d %d\n", name, len, offset);
-	return get_console_text(out, len, offset);
+static int read_text(const Devfile *df, char *out, int len, int offset) {
+	debug("read_text %s %d %d\n", df->name, len, offset);
+	return get_console_text(out, len, offset, df->semantic_filter);
 }
 
+#define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
-	{ 0, "/", -1, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1, "settings", 0, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2, "callsign", 1, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
-	{ 3, "grid", 1, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
-	{ 40, "text", 0, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0 },
-	{ 100, "modes", 0, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 0, "/", -1, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1, "settings", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2, "callsign", 1, SEM_NONE, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
+	{ 3, "grid", 1, SEM_NONE, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
+	{ 40, "text", 0, SEM_NONE, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0 },
+	{ 100, "modes", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	//~ { 101, "ssb", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	//~ { 1000, "1", 101, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	//~ { 1001, "frequency", 1000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
 	//~ { 1002, "if_gain", 1000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
-	{ 102, "ft8", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2000, "1", 102, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2001, "frequency", 2000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
-	{ 2002, "if_gain", 2000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
-	{ 2003, "text", 2000, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
-	//~ { 2004, "text.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
+	{ 102, "ft8", 100, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2000, "1", 102, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2001, "frequency", 2000, SEM_NONE, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
+	{ 2002, "if_gain", 2000, SEM_NONE, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
+	{ 2003, "received", 2000, STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
+	//~ { 2004, "received.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
+	{ 2005, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
@@ -236,7 +238,7 @@ static void dostat(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->atime = df->atime ? df->atime : start_time;
 	s->mtime = df->mtime ? df->mtime : start_time;
-	s->length = df->doread ? size_read(df->doread, df->read_name) : 0;
+	s->length = df->doread ? size_read(df) : 0;
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
@@ -376,7 +378,7 @@ void fs_read(Ixp9Req *r) {
 			ixp_respond(r, nil);
 			return;
 		}
-		r->ofcall.rread.count = f->file->doread(f->file->read_name, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
+		r->ofcall.rread.count = f->file->doread(f->file, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
 		if (r->ofcall.rread.count < 0)
 			rerrno(r, Enoperm);
 		else
