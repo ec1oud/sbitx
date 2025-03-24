@@ -46,8 +46,10 @@ struct Devfile {
 	uint64_t id; // aka qid.path
 	char	*name;
 	int parent;
-	int	(*doread)(char*, int, int);
-	void	(*dowrite)(const char*, int, int);
+	int	(*doread)(const char*, char*, int, int);
+	const char	*read_name;
+	void	(*dowrite)(const char*, const char*, int, int);
+	const char	*write_name;
 	mode_t	mode;
 	uint32_t atime;
 	uint32_t mtime;
@@ -83,17 +85,17 @@ static int debuglevel = 1;
 static time_t start_time;
 static char *argv0;
 
-static int size_read(int	(*doread)(char*, int, int)) {
+static int size_read(int	(*doread)(const char *, char*, int, int), const char *name) {
 	char buf[MAX_FILE_SIZE];
-	return doread(buf, MAX_FILE_SIZE, 0);
+	return doread(name, buf, MAX_FILE_SIZE, 0);
 }
 
-static int read_freq(char *out, int len, int offset) {
+static int read_field(const char *name, char *out, int len, int offset) {
 	static time_t last_read = 0;
 	static char val[12];
 	time_t now = time(nil);
 	if (now - last_read > 1) {
-		get_field_value("r1:freq", val);
+		get_field_value(name, val);
 		last_read = now;
 	}
 	int vlen = strlen(val);
@@ -103,58 +105,20 @@ static int read_freq(char *out, int len, int offset) {
 	return end - out;
 }
 
-static void write_freq(const char *val, int len, int offset) {
-	debug("write_freq %s %d %d\n", val, len, offset);
-	field_set("FREQ", val);
-}
-
-static int read_ifgain(char *out, int len, int offset) {
-	static time_t last_read = 0;
-	static char val[12];
-	time_t now = time(nil);
-	if (now - last_read > 1) {
-		get_field_value("r1:gain", val);
-		last_read = now;
-	}
-	int vlen = strlen(val);
-	if (offset >= vlen)
-		return 0;
-	char *end = stpncpy(out, val, len); // Plan 9: strecpy
-	return end - out;
-}
-
-static void write_ifgain(const char *val, int len, int offset) {
-	field_set("IF", val);
-}
-
-static int read_callsign(char *out, int len, int offset) {
-	static time_t last_read = 0;
-	static char val[12];
-	time_t now = time(nil);
-	if (now - last_read > 1) {
-		get_field_value("#mycallsign", val);
-		last_read = now;
-	}
-	int vlen = strlen(val);
-	if (offset >= vlen)
-		return 0;
-	char *end = stpncpy(out, val, len); // Plan 9: strecpy
-	return end - out;
-}
-
-static void write_callsign(const char *val, int len, int offset) {
-	field_set("MYCALLSIGN", val);
+static void write_field(const char *name, const char *val, int len, int offset) {
+	debug("write_field %s: '%s' %d %d\n", name, val, len, offset);
+	field_set(name, val);
 }
 
 static Devfile devfiles[] = {
-	{ 0, "/", -1, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1, "settings", 0, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2, "callsign", 1, read_callsign, write_callsign, DMEXCL|0666, 0, 0 },
-	{ 3, "modes", 0, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
-	{ 4, "ssb", 3, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 5, "1", 4, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 6, "frequency", 5, read_freq, write_freq, DMEXCL|0666, 0, 0 },
-	{ 7, "if_gain", 5, read_ifgain, write_ifgain, DMEXCL|0666, 0, 0 },
+	{ 0, "/", -1, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1, "settings", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2, "callsign", 1, read_field, "#mycallsign", write_field, "MYCALLSIGN", DMEXCL|0666, 0, 0 },
+	{ 3, "modes", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
+	{ 4, "ssb", 3, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 5, "1", 4, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 6, "frequency", 5, read_field, "r1:freq", write_field, "FREQ", DMEXCL|0666, 0, 0 },
+	{ 7, "if_gain", 5, read_field, "r1:gain", write_field, "IF", DMEXCL|0666, 0, 0 },
 };
 static const int devfiles_count = 9;
 
@@ -233,7 +197,7 @@ static void dostat(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->atime = df->atime ? df->atime : start_time;
 	s->mtime = df->mtime ? df->mtime : start_time;
-	s->length = df->doread ? size_read(df->doread) : 0;
+	s->length = df->doread ? size_read(df->doread, df->read_name) : 0;
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
@@ -371,7 +335,7 @@ void fs_read(Ixp9Req *r) {
 			ixp_respond(r, nil);
 			return;
 		}
-		r->ofcall.rread.count = f->file->doread(r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
+		r->ofcall.rread.count = f->file->doread(f->file->read_name, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
 		if (r->ofcall.rread.count < 0)
 			rerrno(r, Enoperm);
 		else
@@ -425,7 +389,7 @@ void fs_write(Ixp9Req *r) {
 	}
 	char *trimmed = trimwhitespace(r->ifcall.twrite.data);
 	debug("fs_write(%p) %s: %s %d %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
-	f->file->dowrite(trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	f->file->dowrite(f->file->write_name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
 	r->ofcall.rwrite.count = r->ifcall.twrite.count;
 	ixp_respond(r, nil);
 }
