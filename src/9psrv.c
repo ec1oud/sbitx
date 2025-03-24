@@ -46,6 +46,7 @@ struct Devfile {
 	uint64_t id; // aka qid.path
 	char	*name;
 	int parent;
+	void	(*dostat)(IxpStat *s, const Devfile *df);
 	int	(*doread)(const char*, char*, int, int);
 	const char	*read_name;
 	void	(*dowrite)(const char*, const char*, int, int);
@@ -110,18 +111,50 @@ static void write_field(const char *name, const char *val, int len, int offset) 
 	set_field(name, val);
 }
 
+// TODO add up lengths of only lines with appropriate semantics (e.g. FT8)
+static void stat_text(IxpStat *s, const Devfile *df) {
+	s->type = 0;
+	s->dev = 0;
+	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	s->qid.type = 0;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = 0;
+	s->mode = df->mode;
+	s->mtime = console_last_time();
+	s->atime = df->atime;
+	s->length = console_current_length();
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+	debug("stat_text len %d mtime %u\n", s->length, s->mtime);
+}
+
+static int read_text(const char *name, char *out, int len, int offset) {
+	debug("read_text %s %d %d\n", name, len, offset);
+	return get_console_text(out, len, offset);
+}
+
 static Devfile devfiles[] = {
-	{ 0, "/", -1, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1, "settings", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 2, "callsign", 1, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
-	{ 3, "grid", 1, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
-	{ 100, "modes", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
-	{ 101, "ssb", 100, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1000, "1", 101, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 1001, "frequency", 1000, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
-	{ 1002, "if_gain", 1000, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
+	{ 0, "/", -1, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1, "settings", 0, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2, "callsign", 1, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0 },
+	{ 3, "grid", 1, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0 },
+	{ 40, "text", 0, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0 },
+	{ 100, "modes", 0, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	//~ { 101, "ssb", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	//~ { 1000, "1", 101, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	//~ { 1001, "frequency", 1000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
+	//~ { 1002, "if_gain", 1000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
+	{ 102, "ft8", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2000, "1", 102, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2001, "frequency", 2000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0 },
+	{ 2002, "if_gain", 2000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0 },
+	{ 2003, "text", 2000, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
+	//~ { 2004, "text.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
 };
-static const int devfiles_count = 9;
+static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
 static FidAux open_fds[MAX_OPEN_FDS];
 
@@ -188,6 +221,10 @@ static Devfile *find_file(const char *name) {
 }
 
 static void dostat(IxpStat *s, const Devfile *df) {
+	if (df->dostat) {
+		df->dostat(s, df);
+		return;
+	}
 
 	s->type = 0;
 	s->dev = 0;
@@ -317,8 +354,10 @@ void fs_read(Ixp9Req *r) {
 			but when we are reading from offset 0, that's the dir itself: skip it */
 		int found_count = 0;
 		for (int i = 0; i < devfiles_count; ++i) {
-			if (devfiles[i].parent != f->file->id || found_count < f->offset)
+			if (devfiles[i].parent != f->file->id || found_count < f->offset) {
+//~ printf("skipping '%s' par %d not? %d found_count %d offset %d\n", devfiles[i].name, devfiles[i].parent, f->file->id, found_count, f->offset);
 				continue;
+			}
 			dostat(&s, &devfiles[i]);
 			offset += ixp_sizeof_stat(&s);
 			ixp_pstat(&m, &s);

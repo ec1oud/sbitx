@@ -261,12 +261,17 @@ static int console_cols = 48; // intentionally low initial guess
 struct console_line
 {
 	char text[MAX_LINE_LENGTH];
+	// byte offset where this line starts, from the beginning of the whole console:
+	// i.e. sum of all lengths before this line
+	int char_pos_start;
+	int len;
 	text_span_semantic spans[MAX_CONSOLE_LINE_STYLES];
 };
 static struct console_line console_stream[MAX_CONSOLE_LINES];
 int console_current_line = 0;
 int console_selected_line = -1;
 char console_selected_callsign[12];
+time_t console_current_time = 0;
 
 int update_logs = 0;
 
@@ -1348,10 +1353,22 @@ void web_write(int style, char *data)
 
 int console_init_next_line()
 {
+	// +1 for implied newline
+	console_stream[console_current_line].len = strlen(console_stream[console_current_line].text) + 1;
 	console_current_line++;
 	if (console_current_line == MAX_CONSOLE_LINES)
 		console_current_line = 0;
 	memset(&console_stream[console_current_line], 0, sizeof(struct console_line));
+	if (console_current_line) {
+		console_stream[console_current_line].char_pos_start =
+			console_stream[console_current_line - 1].char_pos_start +
+			console_stream[console_current_line - 1].len;
+//~ printf("console_init_next_line: prev line: %d '%s' start %d len %d\n",
+//~ console_current_line - 1,
+//~ console_stream[console_current_line - 1].text,
+//~ console_stream[console_current_line - 1].char_pos_start,
+//~ console_stream[console_current_line - 1].len);
+	}
 	return console_current_line;
 }
 
@@ -1386,6 +1403,8 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	if (!text || text[0] == 0)
 		return;
 
+	const int len = strlen(text);
+
 	// TODO get rid of this: maybe come up with a way to send the `sem` array separately
 	// to the web, zbitx and remote UIs too; otherwise use `sem` to "decorate" with a better markup
 	{
@@ -1404,7 +1423,7 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		sprintf(log_path, "%s/sbitx/data/display_log.txt", getenv("HOME"));
 		FILE *pf = fopen(log_path, "a");
 		if (pf) {
-			fwrite(text, strlen(text), 1, pf);
+			fwrite(text, len, 1, pf);
 			fclose(pf);
 			pf = NULL;
 		}
@@ -1415,7 +1434,9 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 
 	const char *next_char = text;
 	char *console_line_string = console_stream[console_current_line].text;
+	console_current_time = time_sbitx();
 	text_span_semantic *console_line_spans = console_stream[console_current_line].spans;
+
 	int output_span_i = 0;
 	int col = console_line_spans[0].length;
 	const text_span_semantic *next_sem = sem;
@@ -1447,6 +1468,23 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		++next_char;
 	}
 	console_line_spans[0].length = col;
+
+//~ printf("cur line: %d '%s'; start: %d len %d\n",
+//~ console_current_line,
+//~ console_stream[console_current_line].text,
+//~ console_stream[console_current_line].char_pos_start,
+//~ console_stream[console_current_line].len);
+
+	//~ if (console_current_line) {
+		//~ console_stream[console_current_line].char_pos_start =
+			//~ console_stream[console_current_line - 1].char_pos_start +
+			//~ console_stream[console_current_line - 1].len;
+//~ printf("    prev line: %d '%s' start %d len %d\n",
+//~ console_current_line - 1,
+//~ console_stream[console_current_line - 1].text,
+//~ console_stream[console_current_line - 1].char_pos_start,
+//~ console_stream[console_current_line - 1].len);
+	//~ }
 
 	struct field *f = get_field("#console");
 	if (f) {
@@ -6276,6 +6314,45 @@ void bin_dump(int length, uint8_t *data)
 	for (int i = 0; i < length; i++)
 		printf("%x ", data[i]);
 	printf("\n");
+}
+
+int console_current_length()
+{
+	int line = console_current_line;
+	while (line > 0 && !console_stream[line].len)
+		--line;
+	//~ printf("console_current_length: line %d has start %d and len %d: total %d\n",
+		//~ line, console_stream[line].char_pos_start, console_stream[line].len,
+		//~ console_stream[line].char_pos_start + console_stream[line].len);
+	return console_stream[line].char_pos_start + console_stream[line].len;
+}
+
+time_t console_last_time()
+{
+	return console_current_time;
+}
+
+int get_console_text(char *buf, int max, int from_char)
+{
+	// TODO binary search
+	int line = 0;
+	for (; line < MAX_CONSOLE_LINES && console_stream[line].char_pos_start < from_char; ++line);
+		//~ printf("checked line %d: starts @ %d\n", line, console_stream[line].char_pos_start);
+	if (line >= MAX_CONSOLE_LINES)
+		return 0;
+	if (from_char > console_stream[0].len && console_stream[line].char_pos_start >= from_char)
+		--line;
+	// hopefully line now points to the line where from_char can be found
+	char *out = buf;
+	const char *end = buf + max;
+//~ printf("copying console text starting from char %d line %d: max %d\n", from_char, line, end - out);
+	for (; line <= console_current_line && out < end; ++line) {
+//~ printf("copying console text from line %d with len %d: max %d\n", line, console_stream[line].len, end - out);
+		out = stpncpy(out, console_stream[line].text, MIN(console_stream[line].len, end - out));
+		if (out < end)
+			*out++ = '\n';
+	}
+	return out - buf;
 }
 
 int web_get_console(char *buff, int max)
