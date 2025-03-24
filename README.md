@@ -1,94 +1,39 @@
-# sBitx - 64-Bit Version
+# sBitx - 9p version
+
 ![sBitx image](sbitx44.png)
 
+An improved version of the sBitx application designed for the
+[sBitx hardware](https://www.hfsignals.com/index.php/sbitx-v3/)
+and hopefully later on, the zBitx.
 
-An improved version of the sBitx application designed for the sBitx hardware. This version is only for the 64-bit Raspberry Pi image, which can be downloaded [here](https://github.com/drexjj/sbitx/releases).
+This fork by K7IHZ / LB2JK is an experiment to turn the sbitx into a 9p virtual
+file server. It listens on TCP port 1564. You can mount it on Linux with a 9p
+client such as 9pfs:
 
-## 🚀 Development Team
+  $ 9pfs sbitx.local -p 1564 /mnt/sbitx
 
-We have an incredible development team collaborating on improvements for the sBitx platform:
+or Plan 9:
 
-- **JJ - W9JES**
-- **Jon - W2JON**
-- **Alan - N1QM**
-- **Lars - OZ7BX**
-- **Lee - W4WHL**
-- **Mike - KB2ML**
-- **Jeff - KF7YDU**
+  cpu> 9fs tcp!192.168.x.x!1564 /n/sbitx
 
-A huge thank you to everyone who contributes their time and expertise to this project!
+What you will see then is a hierarchy of virtual files: you can read all of
+them, and write to some of them to set your callsign, grid, frequency etc.
 
-## 📂 File Compatibility
+Hopefully the sbitx will some day prove capable of handling multiple channels
+at the same time, within its 25Khz passband; so the filesystem is laid out as
+if it could already do that. If you want to use FT8 mode, for example, you are
+concerned mainly with the files in `/mnt/sbitx/modes/ft8/1`.  You should be
+able to `tail -f /mnt/sbitx/modes/ft8/1/received` to follow the incoming FT8
+packets (but currently there's some trouble with that when using 9pfs on
+Linux). I hope I can serve up real-time audio this way later: then maybe there
+will be `/mnt/sbitx/modes/ssb/1/audio` for one channel, and you could
+simultaneously monitor another voice channel, an FT8 channel, and so on.
+Time will tell.
 
-The files here are designed to work on the modified, 64-bit version provided in the [Releases](https://github.com/drexjj/sbitx/releases) section.
-
-- **sBitx Toolbox for 64-bit**: [Available Here](https://github.com/drexjj/sBITX-toolbox64)
-- **sBitx Toolbox for 32-bit (Factory HF Signals Version)**: [Available Here](https://github.com/drexjj/sBITX-toolbox)
-
-## 🔴 Backup Your Data First!
-
-Before installing this version, **backup your existing** `sbitx/data` **and** `sbitx/web` **folders** to a safe location. This ensures you don’t lose important data such as your logbook, hardware calibration, and user settings.
-
-### Backup Methods
-
-#### 1️⃣ sBITX EZ Data (Recommended)
-
-A built-in backup utility for both the factory and 64-bit versions of sBitx. This tool copies your critical data files to a USB drive. It can be installed from the sBitx Toolbox.
-
-#### 2️⃣ Manual Backup
-
-Alternatively, you can manually back up your data using the terminal:
-
-```console
-cd $HOME && mv sbitx sbitx_orig
-```
-
-To restore your backup after installation:
-
-```console
-cd $HOME && cp -r sbitx_orig/web/* sbitx/web/ && cp -r sbitx_orig/data/* sbitx/data/
-```
-
-## 🔧 Installation & Upgrades
-
-For detailed installation and upgrade instructions, please visit the [Wiki Page](https://github.com/drexjj/sbitx/wiki/How-to-install-or-upgrade-your-sBitx-application).
-
-## 📥 Download the 64-Bit Image
-
-A preconfigured, downloadable Raspberry Pi 4 image file is available. This image is designed for a **32GB SD card or USB drive** and can be installed using **Balena Etcher** or **Raspberry Pi Imager**.
-
-**Bonus**: The image comes preinstalled with sBITX Toolbox and other useful ham radio tools.
-
-🔗 [**Download the latest version**](https://github.com/drexjj/sbitx/releases)
-
-## 👏 Contributors & Credits
-
-A huge thank you to the contributors who have played a vital role in this project!
-
-### Special Thanks To:
-
-- **Jon - W2JON**
-- **Alan - N1QM**
-- **Lee - W4WHL**
-- **Lars - OZ7BX**
-- **Jeff - KF7DYU**
-- **Mike - KB2ML**
-- **Chris - W0ANM**
-- **Gyula - HA3HZ**
-- **Pete - VK3PYE**
-- **Mike - WD0OM**
-- **Farhan - VU2ESE**
-- **Paul - G0KAO**
-- **Don - KK7OIM**
-- **Fabrizio - F4VUK**
-
-## 🌟 Support the Project
-
-If you find these enhancements valuable or have benefited from using sBitx, consider supporting our work. Every donation, big or small, helps us keep development going.
-
-💖 [**Donate Here**](https://www.paypal.com/donate/?hosted_button_id=SWPB76LVNUHEY) 💖
-
-Can't donate? No worries! Contributing code, documentation, or spreading the word also makes a big impact.
-
-Thank you for your support and belief in this project!
+On Plan 9, this is more or less the usual pattern for supporting hardware.
+There are other precedents on Linux too (especially for home automation), 
+such as gpio (the old way!), [1-wire file system](https://owfs.org/),
+and a [filesystem for X10 modules](https://wish.sourceforge.net/index1.html)
+I have used all of these at some point (and recommend them). IMO it's a
+much better pattern than inventing a new command protocol each time.
 
