@@ -1,22 +1,28 @@
 /* Copyright ©2007 Ron Minnich <rminnich at gmail dot com>
-/* Copyright ©2007-2010 Kris Maglione <maglione.k@gmail.com>
- * See LICENSE file for license details.
+ * Copyright ©2007-2010 Kris Maglione <maglione.k@gmail.com>
+ * Copyright ©2025 Shawn Rutledge <s@ecloud.org>
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
  */
 
-/* This is a simple 9P file server which serves a normal filesystem
- * hierarchy. While some of the code is from wmii, the server is by
- * Ron.
- *
- * Note: I added an ifdef for Linux vs. BSD for the mount call, so
- * this compiles on BSD, but it won't actually run. It should,
- * ideally, have the option of not mounting the FS.
- *   --Kris
- */
 #include <assert.h>
-#include <dirent.h>
 #include <err.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <ifaddrs.h>
 #include <netdb.h>
 #include <stdint.h>
@@ -24,42 +30,87 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
-#include <sys/mount.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <ixp_local.h>
 
-/* Temporary */
-#define fatal(...) ixp_eprint("ixpsrv: fatal: " __VA_ARGS__)
-#define debug(...) if(debuglevel) fprintf(stderr, "ixpsrv: " __VA_ARGS__)
-
-/* Datatypes: */
-typedef struct FidAux FidAux;
-struct FidAux {
-	DIR *dir;
-	int fd;
-	char name[]; /* c99 */
+/* Datatypes */
+typedef struct Devfile Devfile;
+struct Devfile {
+	char	*name;
+	int	(*doread)(char*, int, int);
+	mode_t	mode;
+	uint64_t id; // aka qid.path
+	uint32_t atime;
+	uint32_t mtime;
 };
 
-/* Error messages */
+typedef struct FidAux FidAux;
+struct FidAux {
+	int fd;
+	int offset;
+	Devfile *file;
+};
+
+/* Error Messages */
 static char
 	Enoperm[] = "permission denied",
 	Enofile[] = "file not found",
 	Ebadvalue[] = "bad value";
+
 /* Macros */
+// TODO output timestamps
+#define fatal(...) ixp_eprint("fatal: " __VA_ARGS__)
+#define debug(...) if(debuglevel) fprintf(stderr, __VA_ARGS__)
 #define QID(t, i) ((int64_t)(t))
+#define MAX_OPEN_FDS 16
+#define MAX_FILE_SIZE 1024
 
 /* Global Vars */
 static IxpServer server;
 static pid_t pid = 0;
 static char *user;
 static int debuglevel = 1;
-
+static time_t start_time;
 static char *argv0;
+
+static char dir_contents[] = "frequency\nif_gain\n";
+
+static int size_read(int	(*doread)(char*, int, int)) {
+	char buf[MAX_FILE_SIZE];
+	return doread(buf, MAX_FILE_SIZE, 0);
+}
+
+static int read_dir(char *out, int len, int offset) {
+	if (offset >= strlen(dir_contents)) // TODO silly
+		return 0;
+	char *end = stpncpy(out, dir_contents, len);
+	return end - out;
+}
+
+static int read_freq(char *out, int len, int offset) {
+	if (offset >= 6) // TODO silly
+		return 0;
+	char *end = stpncpy(out, "14.078", len); // Plan 9: strecpy
+	return end - out;
+}
+
+static int read_ifgain(char *out, int len, int offset) {
+	if (offset >= 2) // TODO silly
+		return 0;
+	char *end = stpncpy(out, "70", len);
+	return end - out;
+}
+
+static Devfile devfiles[] = {
+	{ "/", read_dir, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ "frequency", read_freq, DMEXCL|0666, 1, 0, 0 },
+	{ "if_gain", read_ifgain, DMEXCL|0666, 2, 0, 0 },
+};
+static const int devfiles_count = 3;
+
+static FidAux open_fds[MAX_OPEN_FDS];
 
 static void fs_open(Ixp9Req *r);
 static void fs_walk(Ixp9Req *r);
@@ -87,8 +138,7 @@ Ixp9Srv p9srv = {
 	.freefid=fs_freefid
 };
 
-static void
-usage() {
+static void usage() {
 	fprintf(stderr,
 		   "usage: %1$s [-a <address>] {create | read | ls [-ld] | remove | write} <file>\n"
 		   "       %1$s [-a <address>] xwrite <file> <data>\n"
@@ -96,156 +146,138 @@ usage() {
 	exit(1);
 }
 
-
 /* Utility Functions */
-
-static FidAux*
-newfidaux(char *name) {
-	FidAux *f;
-
-	f = ixp_emallocz(sizeof(*f) + strlen(name) + 1);
-	f->fd = -1;
-	strcpy(f->name, name);
-	return f;
-}
-/* is this a dir? */
-/* -1 means it ain't anything .. */
-static int
-isdir(char *path) {
-	struct stat buf;
-
-	if (stat(path, &buf) < 0)
-		return -1;
-
-	return S_ISDIR(buf.st_mode);
+static FidAux* newfidaux(Devfile *df) {
+	// find an empty slot in open_fds
+	for (int i = 0; i < MAX_OPEN_FDS; ++i) {
+		if (!open_fds[i].file) {
+			open_fds[i].file = df;
+			open_fds[i].fd = i;
+			open_fds[i].offset = 0;
+			debug("newfidaux(df %p): %p\n", df, &open_fds[i]);
+			return &open_fds[i];
+		}
+	}
+	return nil;
 }
 
-static void
-dostat(IxpStat *s, char *name, struct stat *buf) {
+static Devfile *find_file(const char *name) {
+	if (!strcmp(name, "/"))
+		return devfiles;
+
+	for (int i = 1; i < devfiles_count; ++i) {
+		if (!strcmp(name, devfiles[i].name))
+			return &devfiles[i];
+	}
+
+	return nil;
+}
+
+static void dostat(IxpStat *s, const Devfile *df) {
 
 	s->type = 0;
 	s->dev = 0;
-	s->qid.type = buf->st_mode&S_IFMT;
-	s->qid.path = buf->st_ino;
+	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	s->qid.type = df->mode >> 24;
+	s->qid.path = df->id; // fake "inode"
 	s->qid.version = 0;
-	s->mode = buf->st_mode & 0777;
-	if (S_ISDIR(buf->st_mode)) {
-		s->mode |= P9_DMDIR;
-		s->qid.type |= QTDIR;
-	}
-	s->atime = buf->st_atime;
-	s->mtime = buf->st_mtime;
-	s->length = buf->st_size;
-	s->name =name;
+	s->mode = df->mode;
+	s->atime = df->atime ? df->atime : start_time;
+	s->mtime = df->mtime ? df->mtime : start_time;
+	s->length = size_read(df->doread);
+	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
+	debug("dostat: type %lld id %lld mode 0x%x times %d %d name %s user %s\n",
+				s->qid.type, s->qid.path, s->mode, s->mtime, s->atime, s->name, s->uid);
 }
 
-/* the gnu/linux guys have made a real mess of errno ... don't ask --ron */
-/* I agree. --Kris */
-void
-rerrno(Ixp9Req *r, char *m) {
-/*
-	char errbuf[128];
-	ixp_respond(r, strerror_r(errno, errbuf, sizeof(errbuf)));
- */
+void rerrno(Ixp9Req *r, char *m) {
 	ixp_respond(r, m);
 }
 
-void
-fs_attach(Ixp9Req *r) {
+void fs_attach(Ixp9Req *r) {
 
-	debug("fs_attach(%p)\n", r);
+	debug("fs_attach(%p fid %p)\n", r, r->fid);
 
 	r->fid->qid.type = QTDIR;
 	r->fid->qid.path = (uintptr_t)r->fid;
-	r->fid->aux = newfidaux("/");
+	r->fid->aux = newfidaux(devfiles);
 	r->ofcall.rattach.qid = r->fid->qid;
 	ixp_respond(r, nil);
 }
 
-void
-fs_walk(Ixp9Req *r) {
-	struct stat buf;
-	char *name;
+void fs_walk(Ixp9Req *r) {
+	char name[PATH_MAX];
 	FidAux *f;
-	int i;
-
-	debug("fs_walk(%p)\n", r);
+	int i = 0;
 
 	f = r->fid->aux;
-	name = malloc(PATH_MAX);
-	strcpy(name, f->name);
-	if (stat(name, &buf) < 0){
+	if (!f || !f->file)
 		ixp_respond(r, Enofile);
-		return;
-	}
+	debug("fs_walk(%p %d) %p from %s\n", f, r->fid->fid, f->file, f->file->name);
+	name[0] = 0;
 
-	/* build full path. Stat full path. Done */
+	Devfile *df = find_file(f->file->name);
+	if (!df)
+		ixp_respond(r, Enofile);
+	debug("   fs_walk found qid %d mode 0x%x %s\n", df->id, df->mode, df->name);
+
+	// build full path; populate qid type and ID to return
 	for(i=0; i < r->ifcall.twalk.nwname; i++) {
-		strcat(name, "/");
-		strcat(name, r->ifcall.twalk.wname[i]);
-		if (stat(name, &buf) < 0){
-			ixp_respond(r, Enofile);
-			free(name);
-			return;
-		}
-		r->ofcall.rwalk.wqid[i].type = buf.st_mode&S_IFMT;
-		r->ofcall.rwalk.wqid[i].path = buf.st_ino;
-	}
+		char *subname = r->ifcall.twalk.wname[i];
+		if (subname[0] != '/')
+			strcat(name, "/");
+		strcat(name, subname);
+		df = find_file(subname);
+		if (df)
+			debug("   fs_walk sub %s: found %s ID %d mode 0x%x\n",
+				name, df->name, df->id, df->mode);
+		else
+			debug("   fs_walk sub %s: not found\n");
 
-	r->newfid->aux = newfidaux(name);
+		// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+		r->ofcall.rwalk.wqid[i].type = df->mode >> 24;
+		r->ofcall.rwalk.wqid[i].path = df->id;
+	}
+	debug("   fs_walk final %d name %s\n", i, name);
+	r->newfid->aux = newfidaux(df);
 	r->ofcall.rwalk.nwqid = i;
-	free(name);
 	ixp_respond(r, nil);
 }
 
-void
-fs_stat(Ixp9Req *r) {
-	struct stat st;
+void fs_stat(Ixp9Req *r) {
 	IxpStat s;
 	IxpMsg m;
-	char *name;
 	char *buf;
 	FidAux *f;
 	int size;
 
 	f = r->fid->aux;
-	debug("fs_stat(%p)\n", r);
-	debug("fs_stat %s\n", f->name);
+	// if it somehow doesn't exist: ixp_respond(r, Enofile); return;
+	debug("fs_stat(%p) %s\n", r, f->file->name);
 
-	name = f->name;
-	if (stat(name, &st) < 0){
-		ixp_respond(r, Enofile);
-		return;
-	}
-
-	dostat(&s, name, &st);
+	dostat(&s, f->file);
 	r->fid->qid = s.qid;
 	r->ofcall.rstat.nstat = size = ixp_sizeof_stat(&s);
-
 	buf = ixp_emallocz(size);
-
 	m = ixp_message(buf, size, MsgPack);
 	ixp_pstat(&m, &s);
-
 	r->ofcall.rstat.stat = m.data;
 	ixp_respond(r, nil);
 }
 
-void
-fs_read(Ixp9Req *r) {
+void fs_read(Ixp9Req *r) {
 	FidAux *f;
 	char *buf;
-	int n, offset;
+	int offset;
 	int size;
-
-	debug("fs_read(%p)\n", r);
 
 	f = r->fid->aux;
 
-	if (f->dir) {
+	if (f->file->mode & P9_DMDIR) {
 		IxpStat s;
 		IxpMsg m;
 
@@ -254,32 +286,31 @@ fs_read(Ixp9Req *r) {
 		buf = ixp_emallocz(size);
 		m = ixp_message(buf, size, MsgPack);
 
-		/* note: we don't really handle lots of things well, so do one thing
-		 * at a time
-		 */
-		/*for(f=f->next; f; f=f->next) */{
-			struct dirent *d;
-			struct stat st;
-			d = readdir(f->dir);
-			if (d) {
-				stat(d->d_name, &st);
-				dostat(&s, d->d_name, &st);
-				n = ixp_sizeof_stat(&s);
-				ixp_pstat(&m, &s);
-				offset += n;
-			} else n = 0;
+		debug("fs_read: dir starting from %d of %d\n", f->offset, devfiles_count);
+
+		/*  for each entry in dir, populate IxpStat s,
+			then use that to append to IxpMsg m
+			f->offset is a dir entry index in this case (whereas when reading from a file, it's offset within the file)
+			but when we are reading from offset 0, that's the dir itself: skip it */
+		for (int i = f->offset + 1; i < devfiles_count; ++i) {
+			dostat(&s, &devfiles[i]);
+			offset += ixp_sizeof_stat(&s);
+			ixp_pstat(&m, &s);
+			f->offset = i;
 		}
-		r->ofcall.rread.count = n;
+
+		r->ofcall.rread.count = offset;
 		r->ofcall.rread.data = (char*)m.data;
 		ixp_respond(r, nil);
 		return;
 	} else {
+		debug("   fs_read %s: req size %d offset %d\n", f->file->name, r->ifcall.tread.count, r->ifcall.tread.offset);
 		r->ofcall.rread.data = ixp_emallocz(r->ifcall.tread.count);
 		if (! r->ofcall.rread.data) {
 			ixp_respond(r, nil);
 			return;
 		}
-		r->ofcall.rread.count = pread(f->fd, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
+		r->ofcall.rread.count = f->file->doread(r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
 		if (r->ofcall.rread.count < 0)
 			rerrno(r, Enoperm);
 		else
@@ -287,15 +318,11 @@ fs_read(Ixp9Req *r) {
 		return;
 	}
 
-	/*
-	 * This is an assert because this should this should not be called if
-	 * the file is not open for reading.
-	 */
+	// fs_read should not be called if the file is not open for reading
 	assert(!"Read called on an unreadable file");
 }
 
-void
-fs_write(Ixp9Req *r) {
+void fs_write(Ixp9Req *r) {
 	FidAux *f;
 
 	debug("fs_write(%p)\n", r);
@@ -305,123 +332,52 @@ fs_write(Ixp9Req *r) {
 		return;
 	}
 	f = r->fid->aux;
-	/*
-	 * This is an assert because this function should not be called if
-	 * the file is not open for writing.
-	 */
+	// fs_write should not be called if the file is not open for reading
 	assert(!"Write called on an unwritable file");
 }
 
-void
-fs_open(Ixp9Req *r) {
-	int dir;
-	FidAux *f;
-
-	debug("fs_open(%p)\n", r);
-
-	f = r->fid->aux;
-	dir = isdir(f->name);
-	/* fucking stupid linux -- open dir is a DIR */
-
-	if (dir) {
-		f->dir = opendir(f->name);
-		if (! f->dir){
-			rerrno(r, Enoperm);
-			return;
-		}
+void fs_open(Ixp9Req *r) {
+	FidAux *f = r->fid->aux;
+	if (f->file->mode & P9_DMDIR) {
+		debug("fs_open(%p %p) dir\n", f, f->file);
+		// nothing to do
 	} else {
-		f->fd = open(f->name, O_RDONLY);
-		if (f->fd < 0){
-			rerrno(r, Enoperm);
-			return;
-		}
+		debug("fs_open(%p) %s fd %d\n", r, f->file->name, f->fd);
+		// if it somehow doesn't exist: rerrno(r, Enoperm); return;
+		// nothing to do: fd is set in fs_walk
 	}
+	f->file->atime = time(nil);
 	ixp_respond(r, nil);
 }
 
-
-void
-fs_create(Ixp9Req *r) {
+void fs_create(Ixp9Req *r) {
 	debug("fs_create(%p)\n", r);
 	ixp_respond(r, Enoperm);
 }
 
-void
-fs_remove(Ixp9Req *r) {
+void fs_remove(Ixp9Req *r) {
 	debug("fs_remove(%p)\n", r);
 	ixp_respond(r, Enoperm);
-
 }
 
-void
-fs_clunk(Ixp9Req *r) {
-	int dir;
-	FidAux *f;
-
+void fs_clunk(Ixp9Req *r) {
+	FidAux *f = r->fid->aux;
 	debug("fs_clunk(%p)\n", f);
-
-	f = r->fid->aux;
-	dir = isdir(f->name);
-	if (dir) {
-		(void) closedir(f->dir);
-		f->dir = NULL;
-	} else {
-		(void) close(f->fd);
-		f->fd = -1;
-	}
-
+	f->fd = -1;
+	f->file = nil;
 	ixp_respond(r, nil);
 }
 
-void
-fs_flush(Ixp9Req *r) {
+void fs_flush(Ixp9Req *r) {
 	debug("fs_flush(%p)\n", r);
 	ixp_respond(r, nil);
 }
 
-void
-fs_freefid(IxpFid *f) {
-	debug("fs_freefid(%p)\n", f);
-	free(f->aux);
-}
-
-// mount -t 9p 127.1 /tmp/cache -o port=20006,noextend
-/* Yuck. */
-#if defined(__linux__)
-#  define MF(n) MS_##n
-#  define mymount(src, dest, flags, opts) mount(src, dest, "9p", flags, opts)
-#elif defined(__FreeBSD__) || defined(__OpenBSD__)
-#  define MF(n) MNT_##n
-#  define mymount(src, dest, flags, opts) mount("9p", dest, flags, src)
-#endif
-
-static ulong mountflags =
-	  MF(NOATIME)
-	| MF(NODEV)
-	/* | MF(NODIRATIME) */
-	| MF(NOEXEC)
-	| MF(NOSUID)
-	| MF(RDONLY);
-
-int
-getaddr(char *mountaddr, char **ip, char **port) {
-	char *cp;
-
-	if (!mountaddr)
-		mountaddr = getenv("XCPU_PARENT");
-	if (!mountaddr)
-		return -1;
-
-	cp = mountaddr;
-	if (strcmp(cp, "tcp!"))
-		cp += 4;
-
-	*ip = cp;
-
-	cp = strstr(cp, "!");
-	if (cp)
-		*port = cp + 1;
-	return strtoul(*port, 0, 0);
+void fs_freefid(IxpFid *f) {
+	FidAux *aux = f->aux;
+	debug("fs_freefid(%p)\n", f, aux->fd);
+	aux->fd = -1;
+	aux->file = nil;
 }
 
 void kill_9p()
@@ -469,9 +425,13 @@ void start_9p()
 	}
 
 	int fd = ixp_announce(listen_addr);
-	if(fd < 0)
+	if(fd < 0) {
+		perror(listen_addr);
 		fatal("start_9p: ixp_announce: %s\n", errstr);
+	}
 
+	memset(open_fds, 0, sizeof(open_fds));
+	start_time = time(nil);
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);
 	pid = fork();
 	if (pid < 0)
