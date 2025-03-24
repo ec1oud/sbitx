@@ -74,7 +74,7 @@ static char
 #define fatal(...) ixp_eprint("fatal: " __VA_ARGS__)
 #define debug(...) if(debuglevel) fprintf(stderr, __VA_ARGS__)
 #define QID(t, i) ((int64_t)(t))
-#define MAX_OPEN_FDS 16
+#define MAX_OPEN_FDS 256
 #define MAX_FILE_SIZE 1024
 
 /* Global Vars */
@@ -166,9 +166,10 @@ static FidAux* newfidaux(Devfile *df) {
 			open_fds[i].file = df;
 			open_fds[i].fd = i;
 			open_fds[i].offset = 0;
-			debug("newfidaux(df %p): %p\n", df, &open_fds[i]);
+			debug("newfidaux(df %p): fd %d %p\n", df, i, &open_fds[i]);
 			return &open_fds[i];
 		}
+		debug("FID %p already in use: fd %d %p\n", &open_fds[i], open_fds[i].fd, open_fds[i].file);
 	}
 	return nil;
 }
@@ -429,9 +430,8 @@ void fs_clunk(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_clunk(%p)\n", f);
+	debug("fs_clunk(%p) fd %d file %p\n", f, f->fd, f->file);
 	f->fd = -1;
-	f->file = nil;
 	ixp_respond(r, nil);
 }
 
@@ -446,8 +446,7 @@ void fs_freefid(IxpFid *f) {
 		return;
 	}
 	FidAux *aux = f->aux;
-	debug("fs_freefid(%p)\n", f, aux->fd);
-	aux->fd = -1;
+	debug("fs_freefid(%p) fd %d file %p\n", aux, aux->fd, aux->file);
 	aux->file = nil;
 }
 
