@@ -114,11 +114,12 @@ static Devfile devfiles[] = {
 	{ 0, "/", -1, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	{ 1, "settings", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
 	{ 2, "callsign", 1, read_field, "#mycallsign", write_field, "MYCALLSIGN", DMEXCL|0666, 0, 0 },
-	{ 3, "modes", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
-	{ 4, "ssb", 3, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 5, "1", 4, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
-	{ 6, "frequency", 5, read_field, "r1:freq", write_field, "FREQ", DMEXCL|0666, 0, 0 },
-	{ 7, "if_gain", 5, read_field, "r1:gain", write_field, "IF", DMEXCL|0666, 0, 0 },
+	{ 3, "grid", 1, read_field, "#mygrid", write_field, "MYGRID", DMEXCL|0666, 0, 0 },
+	{ 100, "modes", 0, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
+	{ 101, "ssb", 100, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1000, "1", 101, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1001, "frequency", 1000, read_field, "r1:freq", write_field, "FREQ", DMEXCL|0666, 0, 0 },
+	{ 1002, "if_gain", 1000, read_field, "r1:gain", write_field, "IF", DMEXCL|0666, 0, 0 },
 };
 static const int devfiles_count = 9;
 
