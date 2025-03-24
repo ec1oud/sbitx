@@ -43,11 +43,12 @@
 /* Datatypes */
 typedef struct Devfile Devfile;
 struct Devfile {
+	uint64_t id; // aka qid.path
 	char	*name;
+	int parent;
 	int	(*doread)(char*, int, int);
 	void	(*dowrite)(const char*, int, int);
 	mode_t	mode;
-	uint64_t id; // aka qid.path
 	uint32_t atime;
 	uint32_t mtime;
 };
@@ -82,18 +83,9 @@ static int debuglevel = 1;
 static time_t start_time;
 static char *argv0;
 
-static char dir_contents[] = "frequency\nif_gain\n";
-
 static int size_read(int	(*doread)(char*, int, int)) {
 	char buf[MAX_FILE_SIZE];
 	return doread(buf, MAX_FILE_SIZE, 0);
-}
-
-static int read_dir(char *out, int len, int offset) {
-	if (offset >= strlen(dir_contents)) // TODO silly
-		return 0;
-	char *end = stpncpy(out, dir_contents, len);
-	return end - out;
 }
 
 static int read_freq(char *out, int len, int offset) {
@@ -135,12 +127,36 @@ static void write_ifgain(const char *val, int len, int offset) {
 	field_set("IF", val);
 }
 
+static int read_callsign(char *out, int len, int offset) {
+	static time_t last_read = 0;
+	static char val[12];
+	time_t now = time(nil);
+	if (now - last_read > 1) {
+		get_field_value("#mycallsign", val);
+		last_read = now;
+	}
+	int vlen = strlen(val);
+	if (offset >= vlen)
+		return 0;
+	char *end = stpncpy(out, val, len); // Plan 9: strecpy
+	return end - out;
+}
+
+static void write_callsign(const char *val, int len, int offset) {
+	field_set("MYCALLSIGN", val);
+}
+
 static Devfile devfiles[] = {
-	{ "/", read_dir, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ "frequency", read_freq, write_freq, DMEXCL|0666, 1, 0, 0 },
-	{ "if_gain", read_ifgain, write_ifgain, DMEXCL|0666, 2, 0, 0 },
+	{ 0, "/", -1, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 1, "settings", 0, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 2, "callsign", 1, read_callsign, write_callsign, DMEXCL|0666, 0, 0 },
+	{ 3, "modes", 0, nil, nil, P9_DMDIR|DMEXCL|0777,0, 0 },
+	{ 4, "ssb", 3, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 5, "1", 4, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0 },
+	{ 6, "frequency", 5, read_freq, write_freq, DMEXCL|0666, 0, 0 },
+	{ 7, "if_gain", 5, read_ifgain, write_ifgain, DMEXCL|0666, 0, 0 },
 };
-static const int devfiles_count = 3;
+static const int devfiles_count = 9;
 
 static FidAux open_fds[MAX_OPEN_FDS];
 
@@ -217,13 +233,13 @@ static void dostat(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->atime = df->atime ? df->atime : start_time;
 	s->mtime = df->mtime ? df->mtime : start_time;
-	s->length = size_read(df->doread);
+	s->length = df->doread ? size_read(df->doread) : 0;
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("dostat: type %lld id %lld mode 0x%x times %d %d name %s user %s\n",
-				s->qid.type, s->qid.path, s->mode, s->mtime, s->atime, s->name, s->uid);
+	debug("dostat: '%s'\ttype 0x%02x id %d parent %d mode 0x%x user '%s' times %d %d\n",
+				s->name, s->qid.type, s->qid.path, df->parent, s->mode, s->uid, s->mtime, s->atime);
 }
 
 void rerrno(Ixp9Req *r, char *m) {
@@ -257,7 +273,7 @@ void fs_walk(Ixp9Req *r) {
 	Devfile *df = find_file(f->file->name);
 	if (!df)
 		ixp_respond(r, Enofile);
-	debug("   fs_walk found qid %d mode 0x%x %s\n", df->id, df->mode, df->name);
+	debug("   found starting qid %d mode 0x%x %s\n", df->id, df->mode, df->name);
 
 	// build full path; populate qid type and ID to return
 	for(i=0; i < r->ifcall.twalk.nwname; i++) {
@@ -267,10 +283,10 @@ void fs_walk(Ixp9Req *r) {
 		strcat(name, subname);
 		df = find_file(subname);
 		if (df)
-			debug("   fs_walk sub %s: found %s ID %d mode 0x%x\n",
-				name, df->name, df->id, df->mode);
+			debug("   sub %s (path %s): found %s ID %d mode 0x%x\n",
+				subname, name, df->name, df->id, df->mode);
 		else
-			debug("   fs_walk sub %s: not found\n");
+			debug("   sub %s: not found\n");
 
 		// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
 		r->ofcall.rwalk.wqid[i].type = df->mode >> 24;
@@ -327,19 +343,23 @@ void fs_read(Ixp9Req *r) {
 		buf = ixp_emallocz(size);
 		m = ixp_message(buf, size, MsgPack);
 
-		debug("fs_read: dir starting from %d of %d\n", f->offset, devfiles_count);
+		debug("fs_read fd %d: dir starting from offset %d in qid %d '%s'; total files %d\n", f->fd, f->offset, f->file->id, f->file->name, devfiles_count);
 
 		/*  for each entry in dir, populate IxpStat s,
 			then use that to append to IxpMsg m
 			f->offset is a dir entry index in this case (whereas when reading from a file, it's offset within the file)
 			but when we are reading from offset 0, that's the dir itself: skip it */
-		for (int i = f->offset + 1; i < devfiles_count; ++i) {
+		int found_count = 0;
+		for (int i = 0; i < devfiles_count; ++i) {
+			if (devfiles[i].parent != f->file->id || found_count < f->offset)
+				continue;
 			dostat(&s, &devfiles[i]);
 			offset += ixp_sizeof_stat(&s);
 			ixp_pstat(&m, &s);
-			f->offset = i;
+			++found_count;
 		}
 
+		f->offset = found_count;
 		r->ofcall.rread.count = offset;
 		r->ofcall.rread.data = (char*)m.data;
 		ixp_respond(r, nil);
@@ -416,14 +436,15 @@ void fs_open(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
+	debug("fs_open(%p) '%s' fd %d\n", r, f->file->name, f->fd);
+	/*
 	if (f->file->mode & P9_DMDIR) {
-		debug("fs_open(%p %p) dir\n", f, f->file);
 		// nothing to do
 	} else {
-		debug("fs_open(%p) %s fd %d\n", r, f->file->name, f->fd);
 		// if it somehow doesn't exist: rerrno(r, Enoperm); return;
 		// nothing to do: fd is set in fs_walk
 	}
+	*/
 	f->file->atime = time(nil);
 	ixp_respond(r, nil);
 }
