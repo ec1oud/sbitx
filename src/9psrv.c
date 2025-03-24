@@ -53,8 +53,8 @@ struct Devfile {
 	void	(*dowrite)(const char*, const char*, int, int);
 	const char	*write_name;
 	mode_t	mode;
-	uint32_t atime;
-	uint32_t mtime;
+	time_t atime;
+	time_t mtime;
 };
 
 typedef struct FidAux FidAux;
@@ -95,7 +95,7 @@ static int size_read(const struct Devfile *df) {
 static int read_field(const struct Devfile *df, char *out, int len, int offset) {
 	static time_t last_read = 0;
 	static char val[12];
-	time_t now = time(nil);
+	time_t now = time_sbitx();
 	if (now - last_read > 1) {
 		get_field_value(df->read_name, val);
 		last_read = now;
@@ -111,6 +111,8 @@ static void write_field(const char *name, const char *val, int len, int offset) 
 	debug("write_field %s: '%s' %d %d\n", name, val, len, offset);
 	set_field(name, val);
 }
+
+static void update_console_mtimes(time_t mtime);
 
 static void stat_text(IxpStat *s, const Devfile *df) {
 	s->type = 0;
@@ -129,6 +131,11 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	s->gid = user;
 	s->muid = user;
 	debug("stat_text filter %d len %d mtime %u\n", df->semantic_filter, s->length, s->mtime);
+
+	// side-effect: usually the console has a newer mtime than last time;
+	// so update mtimes on all 'text' files and their parent dirs, recursively.
+	// A better design might be a console callback, but this way seems cheaper for now.
+	update_console_mtimes(s->mtime);
 }
 
 static int read_text(const Devfile *df, char *out, int len, int offset) {
@@ -157,6 +164,23 @@ static Devfile devfiles[] = {
 	{ 2005, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
+
+static void update_console_mtimes(time_t mtime) {
+	for (int f = devfiles_count - 1; f > 0; --f)
+		if (devfiles[f].dostat == stat_text) {
+			int parent_sought = devfiles[f].parent;
+			debug("mtime %u; checking for ancestor %d of %d '%s' (total files %d)\n",
+				mtime, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
+			for (int j = f - 1; j >= 0; --j) {
+				if (devfiles[j].id == parent_sought) {
+					debug("   found %d '%s'\n", devfiles[j].id, devfiles[j].name);
+					devfiles[j].mtime = mtime;
+					parent_sought = devfiles[j].parent;
+				}
+			}
+			return; // one trip up the hierarchy is enough (at least for one mode, one channel)
+		}
+}
 
 static FidAux open_fds[MAX_OPEN_FDS];
 
@@ -455,7 +479,7 @@ void fs_open(Ixp9Req *r) {
 		// nothing to do: fd is set in fs_walk
 	}
 	*/
-	f->file->atime = time(nil);
+	f->file->atime = time_sbitx();
 	ixp_respond(r, nil);
 }
 
@@ -545,7 +569,7 @@ void *run_9p(void *arg) {
 	}
 
 	memset(open_fds, 0, sizeof(open_fds));
-	start_time = time(nil);
+	start_time = time_sbitx();
 
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);
 	ixp_serverloop(&server);
