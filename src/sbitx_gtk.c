@@ -240,11 +240,14 @@ struct encoder enc_a, enc_b;
 #define FIELD_STATIC 5
 #define FIELD_CONSOLE 6
 
+#define LONG_PRESS_TIMEOUT 800
+
 // The console is a series of lines (the only text list so far)
 // console_stream is used as a ring buffer (TODO fix bugs to make it true)
 #define MAX_CONSOLE_BUFFER 10000
 #define MAX_LINE_LENGTH 128
 #define MAX_CONSOLE_LINES 500
+static int console_avg_char_width = 5;
 static int console_cols = 48; // intentionally low initial guess
 struct console_line
 {
@@ -254,6 +257,7 @@ struct console_line
 static struct console_line console_stream[MAX_CONSOLE_LINES];
 int console_current_line = 0;
 int console_selected_line = -1;
+char console_selected_callsign[12];
 
 struct Queue q_web;
 int noise_threshold = 0;		// DSP
@@ -305,8 +309,7 @@ void set_bandwidth(int hz);
 // the main app window
 GtkWidget *window;
 GtkWidget *display_area = NULL;
-GtkWidget *waterfall_gain_slider;
-GtkWidget *text_area = NULL;
+GtkWidget *console_popover = NULL;
 
 extern void settings_ui(GtkWidget *p);
 extern void eq_ui(GtkWidget *p);
@@ -1361,6 +1364,9 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		}
 	}
 
+	if (console_popover)
+		gtk_popover_popdown(GTK_POPOVER(console_popover));
+
 	const char *next_char = text;
 	char *console_line_string = console_stream[console_current_line].text;
 	text_span_semantic *console_line_spans = console_stream[console_current_line].spans;
@@ -1408,8 +1414,10 @@ void draw_console(cairo_t *gfx, struct field *f)
 	rect(gfx, f->x, f->y, f->width, f->height, COLOR_CONTROL_BOX, 1);
 
 	// correct the initial guess with a better estimate, assuming the font is fixed-pitch
-	if (console_cols == 48)
-		console_cols = MIN(f->width / (measure_text(gfx, "01234567890123456789", f->font_index) / 20), MAX_LINE_LENGTH);
+	if (console_cols == 48) {
+		console_avg_char_width = measure_text(gfx, "01234567890123456789", f->font_index) / 20;
+		console_cols = MIN(f->width / console_avg_char_width, MAX_LINE_LENGTH);
+	}
 
 	int y = f->y;
 	int start_line = console_current_line - n_lines;
@@ -1460,6 +1468,91 @@ void draw_console(cairo_t *gfx, struct field *f)
 	}
 }
 
+/*!
+	From the console line at the given \a line number, see if the semantic \a sem
+	can be found.  If so, copy the substring to \a out (which has a max length \a len),
+	and return the start position where it was found.
+
+	Returns -1 if it was not found.
+*/
+int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
+	int _start = -1, _len = -1;
+	for (int i = 0; i < MAX_CONSOLE_LINE_STYLES; ++i)
+		if (console_stream[line].spans[i].semantic == sem) {
+			_start = console_stream[line].spans[i].start_column;
+			_len = console_stream[line].spans[i].length;
+			--_len; // point to the last char
+			if (console_stream[line].text[_start + _len] == ' ')
+				--_len;
+			// remote brackets from hashed callsigns
+			if (sem == STYLE_CALLER || sem == STYLE_CALLEE || sem == STYLE_MYCALL) {
+				if (console_stream[line].text[_start + _len] == '>')
+					--_len;
+				if (console_stream[line].text[_start ] == '<') {
+					++_start;
+					--_len;
+				}
+			}
+			++_len; // point to the null terminator
+			break;
+		}
+	if (_start < 0 || _len < 0)
+		return -1;
+	char *end = stpncpy(out, console_stream[line].text + _start, MIN(_len, outlen));
+	*end = 0;
+	return _start;
+}
+
+void popover_call_button_clicked(GtkWidget *widget, void *data) {
+	char ft8_message[64];
+	// strcpy(ft8_message, console_stream[console_selected_line].text);
+	hd_strip_decoration(ft8_message, console_stream[console_selected_line].text);
+	// TODO this is silly: use console_selected_callsign instead of re-parsing the whole line
+	ft8_process(ft8_message, FT8_START_QSO);
+	gtk_popover_popdown(GTK_POPOVER(console_popover));
+}
+
+int console_long_press(void *)
+{
+	if (!strcmp(get_field("r1:mode")->value, "FT8")) {
+		struct field *console = get_field("#console");
+		const int line_height = font_table[console->font_index].height;
+		int call_start = console_extract_semantic(console_selected_callsign,
+			sizeof(console_selected_callsign), console_selected_line, STYLE_CALLER);
+		if (call_start < 0)
+			return G_SOURCE_REMOVE;
+		field_set("CALL", console_selected_callsign);
+		int call_len = strlen(console_selected_callsign);
+		GdkRectangle callsign_bounds;
+		callsign_bounds.x = console_avg_char_width * call_start;
+		callsign_bounds.width = console_avg_char_width * call_len;
+		callsign_bounds.y = console->y + console->height - (console_current_line - console_selected_line + 1) * line_height;
+		callsign_bounds.height = line_height;
+		//~ printf("long press: sel %d cur %d; '%s' from '%s' @ x %d..%d y %d\n",
+			//~ console_selected_line, console_current_line, console_selected_callsign, console_stream[console_selected_line].text,
+			//~ callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
+		static GtkWidget *popover_label = NULL;
+		if (!console_popover) {
+			console_popover = gtk_popover_new(display_area);
+			popover_label = gtk_label_new(console_selected_callsign);
+			GtkWidget *call_button = gtk_button_new_with_label("Call");
+			GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+			gtk_box_pack_start(GTK_BOX(vbox), popover_label, FALSE, FALSE, 0);
+			gtk_box_pack_start(GTK_BOX(vbox), call_button, FALSE, FALSE, 0);
+			gtk_container_add(GTK_CONTAINER(console_popover), vbox);
+			g_object_set(vbox, "margin", 10, NULL);
+			gtk_widget_set_margin_top(vbox, 20);
+			g_signal_connect(call_button, "clicked", G_CALLBACK(popover_call_button_clicked), NULL);
+		} else {
+			gtk_label_set_text(GTK_LABEL(popover_label), console_selected_callsign);
+		}
+		gtk_popover_set_pointing_to(GTK_POPOVER(console_popover), &callsign_bounds);
+		gtk_widget_show_all(console_popover);
+		update_field(console);
+	}
+	return G_SOURCE_REMOVE; // one-shot
+}
+
 int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 {
 	char buff[100], *p, *q;
@@ -1468,13 +1561,13 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 	int n_lines = (f->height / line_height) - 1;
 	int l = 0;
 	int start_line = console_current_line - n_lines;
+	static guint timer = 0;
 
 	switch (event)
 	{
 	case FIELD_DRAW:
 		draw_console(gfx, f);
 		return 1;
-		break;
 	case GDK_BUTTON_PRESS:
 	case GDK_MOTION_NOTIFY:
 		l = start_line + ((b - f->y) / line_height);
@@ -1482,19 +1575,15 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 			l += MAX_CONSOLE_LINES;
 		console_selected_line = l;
 		f->is_dirty = 1;
+		if (event == GDK_MOTION_NOTIFY && timer)
+			g_source_remove(timer);
+		timer = g_timeout_add(LONG_PRESS_TIMEOUT, console_long_press, NULL);
 		return 1;
-		break;
 	case GDK_BUTTON_RELEASE:
-		if (!strcmp(get_field("r1:mode")->value, "FT8"))
-		{
-			char ft8_message[300];
-			// strcpy(ft8_message, console_stream[console_selected_line].text);
-			hd_strip_decoration(ft8_message, console_stream[console_selected_line].text);
-			ft8_process(ft8_message, FT8_START_QSO);
-		}
+		if (timer)
+			g_source_remove(timer);
 		f->is_dirty = 1;
 		return 1;
-		break;
 	case FIELD_EDIT:
 		if (a == MIN_KEY_UP && console_selected_line > start_line)
 			console_selected_line--;
@@ -6279,9 +6368,9 @@ void handleButton1Press()
 				{
 					// Switch fields without changing it's value - n1qm
 					focus_field_without_toggle(get_field("r1:mode"));
-				}
-				else
-				{
+				} else if (f_focus && !strcmp(f_focus->label, "CONSOLE")) {
+					console_long_press(NULL);
+				} else {
 					focus_field(get_field("r1:volume"));
 					// printf("Focus is on %s\n", f_focus->label);
 				}
