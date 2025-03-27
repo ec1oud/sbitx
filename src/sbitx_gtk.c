@@ -1591,7 +1591,32 @@ int console_long_press(void *p)
 		//~ printf("long press: sel %d cur %d; '%s' from '%s' @ x %d..%d y %d\n",
 			//~ console_selected_line, console_current_line, console_selected_callsign, console_stream[console_selected_line].text,
 			//~ callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
+
+		//~ char log_entries[1024];
+		//~ memset(log_entries, 0, sizeof(log_entries));
+		//~ int log_count = logbook_prev_log(log_entries, sizeof(log_entries), console_selected_callsign);
+		//~ printf("found %d in logbook: %s\n", log_count, log_entries);
+
+		struct tm last_log_tm;
+		char last_log_date_time_str[64];
+		memset(last_log_date_time_str, 0, sizeof(last_log_date_time_str));
+		int log_count = logbook_last_date(&last_log_tm, console_selected_callsign);
+		if (log_count) {
+			size_t dtslen = strftime(last_log_date_time_str, sizeof(last_log_date_time_str), "%F %H:%M", &last_log_tm);
+			if (dtslen) {
+				const time_t last_log = mktime(&last_log_tm);
+				const time_t now = time_sbitx();
+				const double diff = difftime(now, last_log);
+				const int days_ago = diff / 86400.0;
+				//~ printf("%s: time %lld now %lld; seconds ago: %lf %lld days ago: %d\n", last_log_date_time_str, last_log, now, diff, (now - last_log), days_ago);
+				if (days_ago > 0)
+					snprintf(last_log_date_time_str + dtslen, sizeof(last_log_date_time_str) - dtslen, " %d days ago", days_ago);
+				printf("%s: found %d QSOs in logbook, most recent: %s\n", console_selected_callsign, log_count, last_log_date_time_str);
+			}
+		}
+
 		static GtkWidget *popover_label = NULL;
+		static GtkWidget *popover_log_label = NULL;
 		if (!console_popover) {
 			console_popover = gtk_popover_new(display_area);
 			popover_label = gtk_label_new(console_selected_callsign);
@@ -1610,6 +1635,7 @@ int console_long_press(void *p)
 			g_signal_connect(call_button, "clicked", G_CALLBACK(popover_call_button_clicked), NULL);
 		} else {
 			gtk_label_set_text(GTK_LABEL(popover_label), console_selected_callsign);
+			gtk_label_set_text(GTK_LABEL(popover_log_label), last_log_date_time_str);
 		}
 		gtk_popover_set_pointing_to(GTK_POPOVER(console_popover), &callsign_bounds);
 		gtk_widget_show_all(console_popover);
