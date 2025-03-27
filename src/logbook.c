@@ -221,14 +221,16 @@ bool logbook_grid_exists(char *id) {
 	sqlite3_finalize(stmt);
 	return exists;
 }
-int logbook_prev_log(const char *callsign, char *result){
+
+// TODO use outlen to prevent buffer overflow
+int logbook_prev_log(char *out, int outlen, const char *callsign){
 	char statement[1000], param[2000];
 	sqlite3_stmt *stmt;
 	sprintf(statement, "select * from logbook where "
 		"callsign_recv=\"%s\" ORDER BY id DESC",
 		callsign);
-	strcpy(result, callsign);
-	strcat(result, ": ");
+	strcpy(out, callsign);
+	strcat(out, ": ");
 	int res = sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
 	int rec = 0;
 	while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -256,18 +258,50 @@ int logbook_prev_log(const char *callsign, char *result){
 					sprintf(param, "%d", sqlite3_column_type(stmt, i));
 					break;
 				}
-				strcat(result, param);
-				if (!strcmp(col_name, "qso_date")) strcat(result, "_");
-				else strcat(result, " ");
+				strcat(out, param);
+				if (!strcmp(col_name, "qso_date")) strcat(out, "_");
+				else strcat(out, " ");
 			}
 		}
 		rec++;
 	}
 	sqlite3_finalize(stmt);
 	sprintf(param, ": %d", rec);
-	strcat(result, param);
+	strcat(out, param);
 	return rec;
 }
+
+/*!
+	Returns the number of QSOs found with the given \a callsign,
+	and populates \a out with the date and time of the most recent log entry.
+	Returns 0 if not found, < 0 in case of errors.
+*/
+int logbook_last_date(struct tm *out, const char *callsign)
+{
+	char statement[96], date_time_str[20];
+	sqlite3_stmt *stmt;
+	snprintf(statement, sizeof(statement),
+		"select qso_date, qso_time, id from logbook where callsign_recv=\"%s\" ORDER BY id DESC",
+		callsign);
+	int res = sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
+	int ret = 0;
+	while (sqlite3_step(stmt) == SQLITE_ROW) {
+		if (!ret) { // populate `out` with the most recent QSO date/time
+			assert(sqlite3_column_count(stmt) == 3);
+			snprintf(date_time_str, sizeof(date_time_str), "%s %s", sqlite3_column_text(stmt, 0), sqlite3_column_text(stmt, 1));
+			memset(out, 0, sizeof(out));
+			if (!strptime(date_time_str, "%Y-%m-%d %H%M", out))
+				return -1; // parse error
+			//~ char buf[80];
+			//~ asctime_r(out, buf);
+			//~ printf("%s last %s %s -> %s\n", callsign, sqlite3_column_text(stmt, 0), sqlite3_column_text(stmt, 1), buf);
+		}
+		++ret; // but count them all
+	}
+	sqlite3_finalize(stmt);
+	return ret;
+}
+
 int row_count_callback(void *data, int argc, char **argv, char **azColName) {
     int *count = (int*)data;
     (*count)++;
