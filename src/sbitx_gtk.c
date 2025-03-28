@@ -188,7 +188,7 @@ int screen_width = 800, screen_height = 480;
 struct font_style
 {
 	int index;
-	double r, g, b;
+	float r, g, b;
 	char name[32];
 	int height;
 	int weight;
@@ -202,11 +202,15 @@ guint key_modifier = 0;
 struct font_style font_table[] = {
 	// semantic styles (only for the console so far):
 	// STYLE_LOG must come first, because it's 0, the default
-	{STYLE_LOG, 1, 1, 1, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
-	{STYLE_MYCALL, 0.2, 1, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
-	{STYLE_CALLER, 1, 0.2, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_LOG, 0.7, 0.7, 0.7, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_MYCALL, 1, 0, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_CALLER, 0.8, 0.4, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_CALLEE, 0, 0.6, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_GRID, 1, 0.8, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_TIME, 0, 0.8, 0.8, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_SNR, 1, 1, 1, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_FREQ, 0, 1, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+
 	// mode-specific semantics
 	{STYLE_FT8_RX, 0, 1, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_FT8_TX, 1, 0.6, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
@@ -1421,7 +1425,7 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	while (*next_char)
 	{
 		int text_i = next_char - text;
-		if (next_sem < sem + sem_count && next_sem->start_column == text_i) {
+		while (next_sem < sem + sem_count && next_sem->start_column == text_i) {
 			text_span_semantic *out_sem = &console_line_spans[output_span_i];
 			*out_sem = *next_sem; // copy whole struct
 			out_sem->start_row = console_current_line; // only useful for output to spans file, and should increment forever (TODO)
@@ -1480,17 +1484,27 @@ void draw_console(cairo_t *gfx, struct field *f)
 		int x = 0;
 		int col = 0;
 		char buf[MAX_LINE_LENGTH];
-		for (int span = 0; span < MAX_CONSOLE_LINE_STYLES && line->spans[span].length; ++span) {
-			//~ printf("-> line %d span %d col %d len %d style %d @ x %d\n",
-			//~ start_line, span, line->spans[span].start_column, line->spans[span].length, line->spans[span].semantic, x);
+		int default_sem = STYLE_LOG;
+		int span = 0;
+		// The first span may be a fallback. If the second span is valid and overlaps it, start with that one.
+		if (line->spans[1].start_column == 0 && line->spans[1].length) {
+			span = 1;
+			default_sem = line->spans[0].semantic;
+			//~ printf("-> line %d: first span had length %d; starting with span 1: col %d len %d: '%s'\n",
+					//~ i, line->spans[0].length, line->spans[1].start_column, line->spans[1].length, line->text);
+		}
+		for (; span < MAX_CONSOLE_LINE_STYLES && line->spans[span].length; ++span) {
+			//~ printf("-> line %d span %d col %d len %d style %d @ col %d x %d\n",
+				//~ i, span, line->spans[span].start_column, line->spans[span].length, line->spans[span].semantic, col, x);
 			if (line->spans[span].start_column > col) {
 				// draw the default-styled text to the left of this span
 				const int len = MIN(line->spans[span].start_column - col, MAX_LINE_LENGTH - 1);
-				const int wlen = stpncpy(buf, line->text + col, len) - buf;
-				col += wlen;
-				buf[wlen] = 0;
-				x += draw_text(gfx, f->x + 2 + x, y, buf, STYLE_LOG);
-				//~ printf("   nabbed text '%s' to left of %d,  len %d; end @ col %d, %d px\n", buf, line->spans[span].start_column, wlen, col, x);
+				memcpy(buf, line->text + col, len);
+				col += len;
+				buf[len] = 0;
+				x += draw_text(gfx, f->x + 2 + x, y, buf, default_sem);
+				//~ printf("   nabbed text '%s' to left of %d,  len %d; end @ col %d, %d px\n",
+					//~ buf, line->spans[span].start_column, len, col, x);
 			}
 			const int len = MIN(line->spans[span].length, MAX_LINE_LENGTH - 1);
 			// copy the substring and null-terminate, because cairo_show_text() can't take a length argument :-(
@@ -1505,7 +1519,7 @@ void draw_console(cairo_t *gfx, struct field *f)
 			// draw the default-styled text to the right of the last span
 			const int wlen = stpncpy(buf, line->text + col, sizeof(buf) - col) - buf;
 			buf[wlen] = 0;
-			x += draw_text(gfx, f->x + 2 + x, y, buf, STYLE_LOG);
+			x += draw_text(gfx, f->x + 2 + x, y, buf, default_sem);
 			//~ printf("   nabbed text '%s' to right of %d,  len %d; end @ %d px\n", buf, col, wlen, col, x);
 		}
 
