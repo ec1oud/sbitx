@@ -115,9 +115,6 @@ char pins[15] = {0, 2, 3, 6, 7,
 #define ENC_SLOW 5
 
 #define DS3231_I2C_ADD 0x68
-// time sync, when the NTP time is not synced, this tracks the number of seconds
-// between the system cloc and the actual time set by \utc command
-static long time_delta = 0;
 
 // INA260 I2C Address and Register Definitions
 #define INA260_ADDRESS 0x40
@@ -3907,12 +3904,6 @@ struct field *get_focused_field()
 	return f_focus; // Return the currently focused field
 }
 
-time_t time_sbitx()
-{
-	if (time_delta)
-		return time(NULL);
-}
-
 struct band *get_band_by_frequency(int frequency)
 {
 	// Iterate through the band stack to find the matching band
@@ -5903,118 +5894,6 @@ void init_gpio_pins()
 	pullUpDnControl(DASH, PUD_UP);
 }
 
-uint8_t dec2bcd(uint8_t val)
-{
-	return ((val / 10 * 16) + (val % 10));
-}
-
-uint8_t bcd2dec(uint8_t val)
-{
-	return ((val / 16 * 10) + (val % 16));
-}
-
-void rtc_read()
-{
-	uint8_t rtc_time[10];
-
-	i2cbb_write_i2c_block_data(DS3231_I2C_ADD, 0, 0, NULL);
-
-	int e = i2cbb_read_i2c_block_data(DS3231_I2C_ADD, 0, 8, rtc_time);
-	if (e <= 0)
-	{ // start W9JES W2JON
-		// Use system time
-		time_t system_time = time(NULL);
-		struct tm *sys_time_info = gmtime(&system_time);
-
-		if (sys_time_info == NULL)
-		{
-			printf("Failed to get system time\n");
-			return;
-		}
-		time_delta = (long)system_time - (long)(millis() / 1000l);
-
-		char buf[64];
-		int len = strftime(buf, sizeof(buf), "RTC not detected; system time %Y/%m/%d %H:%M:%S\n\n", sys_time_info);
-		//~ snprintf(buf + len, sizeof(buf) - len, " delta %ld\n", time_delta);
-		write_console(STYLE_LOG, buf);
-
-		return;
-	} // end W9JES W2JON
-	for (int i = 0; i < 7; i++)
-		rtc_time[i] = bcd2dec(rtc_time[i]);
-
-	// convert to julian
-	struct tm t;
-	t.tm_year = rtc_time[6] + 2000 - 1900;
-	t.tm_mon = rtc_time[5] - 1;
-	t.tm_mday = rtc_time[4];
-	t.tm_hour = rtc_time[2];
-	t.tm_min = rtc_time[1];
-	t.tm_sec = rtc_time[0];
-
-	time_t tjulian = mktime(&t);
-
-	tzname[0] = tzname[1] = "GMT";
-	timezone = 0;
-	daylight = 0;
-	setenv("TZ", "UTC", 1);
-	time_t gm_now = mktime(&t);
-
-	time_delta = (long)gm_now - (long)(millis() / 1000l);
-
-	char buf[64];
-	int len = strftime(buf, sizeof(buf), "RTC detected: %Y/%m/%d %H:%M:%S\n\n", &t);
-	//~ snprintf(buf + len, sizeof(buf) - len, " delta %ld\n\n", time_delta);
-	write_console(STYLE_LOG, buf);
-}
-
-void rtc_write(int year, int month, int day, int hours, int minutes, int seconds)
-{
-	uint8_t rtc_time[10];
-
-	rtc_time[0] = dec2bcd(seconds);
-	rtc_time[1] = dec2bcd(minutes);
-	rtc_time[2] = dec2bcd(hours);
-	rtc_time[3] = 0;
-	rtc_time[4] = dec2bcd(day);
-	rtc_time[5] = dec2bcd(month);
-	rtc_time[6] = dec2bcd(year - 2000);
-
-	for (uint8_t i = 0; i < 7; i++)
-	{
-		int e = i2cbb_write_byte_data(DS3231_I2C_ADD, i, rtc_time[i]);
-		if (e)
-			printf("rtc_write: error writing ds1307 register at %d index\n", i);
-	}
-
-	/*	int e =  i2cbb_write_i2c_block_data(DS1307_I2C_ADD, 0, 7, rtc_time);
-		if (e < 0){
-			printf("RTC not written: %d\n", e);
-			return;
-		}
-	*/
-}
-
-// copy the computer time to the rtc
-void rtc_update()
-{
-	time_t t = time(NULL);
-	struct tm *t_utc = gmtime(&t);
-
-	printf("Checking for valid NTP time ...");
-	if (system("ntpstat") != 0)
-	{
-		printf(".. not found.\n");
-		return;
-	}
-	printf("Syncing RTC to %04d-%02d-%02d %02d:%02d:%02d\n",
-		   t_utc->tm_year + 1900, t_utc->tm_mon + 1, t_utc->tm_mday,
-		   t_utc->tm_hour, t_utc->tm_min, t_utc->tm_sec);
-
-	rtc_write(t_utc->tm_year + 1900, t_utc->tm_mon + 1, t_utc->tm_mday,
-			  t_utc->tm_hour, t_utc->tm_min, t_utc->tm_sec);
-}
-
 // Function to configure the INA260
 void configure_ina260()
 {
@@ -6801,19 +6680,17 @@ void zbitx_init()
 	}
 }
 
-int next_sync = 0;
-void try_ntp() {
-	const char* ntp_server = "pool.ntp.org";
+int next_sync = 0; //sets to -1  after a network update
+void try_ntp(){
+	const char* ntp_server = "time.google.com";
 
 	if (next_sync > millis() || next_sync == -1)
 		return;
 
-	if (sync_system_time(ntp_server) == 0) {
-		rtc_update();
+	if (sync_sbitx_time(ntp_server) != -1)
 		next_sync = -1;
-	} else {
+	else
 		next_sync = millis() + 30000;
-	}
 }
 
 gboolean ui_tick(gpointer gook)
@@ -7314,7 +7191,8 @@ void utc_set(char *args, int update_rtc)
 		return;
 	}
 
-	rtc_write(n[0], n[1], n[2], n[3], n[4], n[5]);
+	rtc_write_ntp(n[0], n[1], n[2], n[3], n[4], n[5]);
+ 	rtc_read();
 
 	if (n[0] < 2000)
 		n[0] += 2000;
@@ -7332,8 +7210,6 @@ void utc_set(char *args, int update_rtc)
 	gm_now = mktime(&t);
 
 	write_console(STYLE_LOG, "UTC time is set\n");
-	time_delta = (long)gm_now - (long)(millis() / 1000l);
-	printf("time_delta = %ld\n", time_delta);
 }
 
 void meter_calibrate()
@@ -8226,11 +8102,8 @@ int main(int argc, char *argv[])
 	else
 		setup("plughw:0,0");	// otherwise use the default audio output device
 
-	// --- Check time against NTP server
-	const char *ntp_server = "pool.ntp.org";
-	sync_system_time(ntp_server);
-	// ---
-	//rtc_sync();
+	const char* ntp_server = "time.google.com";
+	sync_sbitx_time(ntp_server);
 
 	struct field *f;
 	f = active_layout;
