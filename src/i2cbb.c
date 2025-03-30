@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <stdint.h>
 #include <time.h>
+#include <assert.h>
 #include "i2cbb.h"
 
 static uint8_t PIN_SDA;
@@ -197,6 +198,12 @@ static int i2c_write_byte(int send_start, int send_stop, uint8_t byte)
 {
 	unsigned bit;
 	int nack = 0;
+
+	static int mutex = 0;
+	if (mutex)
+		printf("double!\n");
+	mutex++;
+
 	if (send_start)
 		i2c_start_cond();
 	for (bit = 0; bit < 8; bit++) {
@@ -206,6 +213,7 @@ static int i2c_write_byte(int send_start, int send_stop, uint8_t byte)
 	nack = i2c_read_bit();
 	if (send_stop)
 		i2c_stop_cond();
+	mutex--;
 	return nack;
 }
 
