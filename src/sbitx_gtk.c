@@ -6501,7 +6501,6 @@ void zbitx_get_spectrum(char *buff){
   int starting_bin = (3 *MAX_BINS)/4 - n_bins/2;
   int ending_bin = starting_bin + n_bins;
 
-	//printf("zbitx spectrum %d\n", millis());
   int j;
   if (in_tx){
     strcpy(buff, "WF ");
@@ -6657,25 +6656,28 @@ void zbitx_poll(int all){
 
 void zbitx_init()
 {
-	char hello[] = "9 zBitx is running\n}";
-	int e = i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(hello), hello);
+	char buff[100];
+	snprintf(buff, sizeof(buff), "9 %s}", VER_STR);
+ 	int e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
+
 	if (!e) {
 		printf("zBitx front panel detected\n");
 		zbitx_available = 1;
-		zbitx_logs();
+
+ 		e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{',
+		strlen(VER_STR), VER_STR);
 
 		FILE *pf = popen("hostname -I", "r");
 		if (pf){
-			char ip_str[100], buff[100];
+			char ip_str[100];
 			fgets(ip_str, 100, pf);
 			pclose(pf);
 			//terminate the string at the first space
 			char *p = strchr(ip_str, ' ');
 			if (p){
 				*p = 0;
-				sprintf(buff, "9 \nzBitx on http://%s\n}", ip_str);
- 				i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{',
-					strlen(buff), buff);
+				snprintf(buff, sizeof(buff), "9 \nzBitx on http://%s\n}", ip_str);
+ 				i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
 			}
 		}
 	}
