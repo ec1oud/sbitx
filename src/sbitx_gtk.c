@@ -6639,8 +6639,9 @@ void zbitx_poll(int all){
 
 		if(!strncmp(buff, "FT8 ", 4)){
 			char ft8_message[100];
-			hd_strip_decoration(ft8_message, buff + 4);
-			ft8_process(ft8_message, FT8_START_QSO);
+			hd_strip_decoration(ft8_message, buff);
+			//ft8_process(ft8_message, FT8_START_QSO);
+			remote_execute(ft8_message);
 			printf("FT8 processing from zbitx\n");
 		}
 		else{
@@ -8118,12 +8119,6 @@ int main(int argc, char *argv[])
 	memset(tx_mod_buff, 0, sizeof(int32_t) * tx_mod_max);
 	tx_mod_index = 0;
 	init_waterfall();
-
-	// set the radio to some decent defaults
-	do_control_action("FREQ 7100000");
-	do_control_action("MODE LSB");
-	do_control_action("STEP 1K");
-	do_control_action("SPAN 25K");
 
 	strcpy(vfo_a_mode, "USB");
 	strcpy(vfo_b_mode, "LSB");

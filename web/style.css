@@ -350,8 +350,8 @@ select, select option, input {
 }
 
 #record_stop {
-	background-color: white;
-	color: black;	
+	background-color: black;
+	color: white;	
 	width: 60px;
 	font-weight: bold;
 }

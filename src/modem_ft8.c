@@ -989,6 +989,9 @@ void ft8_process(char *message, int operation){
 	char buff[100], reply_message[100], *p;
 	int auto_respond = 0;
 
+	printf("ft8_process:%d[%s]\n", operation, message);
+
+
 	if (ft8_message_tokenize(message) == -1)
 		return;
 
