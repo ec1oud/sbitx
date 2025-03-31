@@ -338,11 +338,14 @@ void fs_walk(Ixp9Req *r) {
 			strcat(name, "/");
 		strcat(name, subname);
 		df = find_file(subname);
-		if (df)
+		if (df) {
 			debug("   sub %s (path %s): found %s ID %d mode 0x%x\n",
 				subname, name, df->name, df->id, df->mode);
-		else
-			debug("   sub %s: not found\n");
+		} else {
+			debug("   sub %s (path %s): not found\n", subname, name);
+			rerrno(r, Enoperm);
+			return;
+		}
 
 		// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
 		r->ofcall.rwalk.wqid[i].type = df->mode >> 24;
