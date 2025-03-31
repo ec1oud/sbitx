@@ -1357,8 +1357,10 @@ int console_init_next_line()
 	// +1 for implied newline
 	console_stream[console_current_line].len = strlen(console_stream[console_current_line].text) + 1;
 	console_current_line++;
-	if (console_current_line == MAX_CONSOLE_LINES)
+	if (console_current_line == MAX_CONSOLE_LINES){
 		console_current_line = 0;
+		printf("---- console wrap: back to current line 0\n");
+	}
 	memset(&console_stream[console_current_line], 0, sizeof(struct console_line));
 	if (console_current_line) {
 		console_stream[console_current_line].char_pos_start =
@@ -1441,6 +1443,8 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	int output_span_i = 0;
 	int col = console_line_spans[0].length;
 	const text_span_semantic *next_sem = sem;
+	//~ printf("write_console_semantic line %d '%s'\n", console_current_line, text);
+
 	while (*next_char)
 	{
 		int text_i = next_char - text;
@@ -1448,8 +1452,8 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 			text_span_semantic *out_sem = &console_line_spans[output_span_i];
 			*out_sem = *next_sem; // copy whole struct
 			out_sem->start_row = console_current_line; // only useful for output to spans file, and should increment forever (TODO)
-			//~ printf("write '%s': span %d col %d len %d: style %d\n",
-				//~ text, output_span_i, out_sem->start_column, out_sem->length, out_sem->semantic); // debug
+			//~ printf("    line %d span %d row %d col %d len %d: style %d\n",
+				//~ console_current_line, output_span_i, out_sem->start_row, out_sem->start_column, out_sem->length, out_sem->semantic); // debug
 			++output_span_i;
 			++next_sem;
 		}
@@ -1460,6 +1464,7 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 			console_init_next_line();
 			console_line_string = console_stream[console_current_line].text;
 			console_line_spans = console_stream[console_current_line].spans;
+			console_line_spans->start_row = console_current_line;
 			col = 0;
 			output_span_i = 0;
 		}
@@ -6461,6 +6466,17 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 	return out - buf;
 }
 
+void dump_spans(text_span_semantic *buf, int count, int which)
+{
+	for (int s = 0; s < count; ++s) {
+		unsigned char *sb = (buf + s);
+		printf("   span %d: %02x %02x %02x %02x %02x %02x %02x %02x: r %d c %d l %d s %d %s\n",
+			s, sb[0], sb[1], sb[2], sb[3], sb[4], sb[5], sb[6], sb[7],
+			buf[s].start_row, buf[s].start_column, buf[s].length, buf[s].semantic,
+			(which == s ? "<----" : ""));
+	}
+}
+
 /*!
 	Copy line metadata (spans) from the console into \a buf,
 	starting from character offset \a from_byte, up to \a max_bytes
@@ -6478,35 +6494,55 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 int get_console_text_spans(text_span_semantic *buf, int max_bytes, int from_byte, sbitx_style filter)
 {
 	// TODO binary search
+	int filtered_pos = 0;
+	int line_end_pos = 0;
 	int line = 0;
 	{
-		int filtered_pos = 0;
-		for (; line < MAX_CONSOLE_LINES && filtered_pos < from_byte; ++line) {
+		for (; line < MAX_CONSOLE_LINES; ++line) {
 			if (!filter || (console_stream[line].spans[0].start_column == 0
-					&& console_stream[line].spans[0].semantic == filter))
-				filtered_pos += console_stream[line].spans_count * sizeof(text_span_semantic);
+					&& console_stream[line].spans[0].semantic == filter)) {
+				line_end_pos = filtered_pos + console_stream[line].spans_count * sizeof(text_span_semantic);
+				if (line_end_pos > from_byte)
+					break;
+				filtered_pos = line_end_pos;
+			}
 		}
 		if (line >= MAX_CONSOLE_LINES)
 			return 0;
-		if (filtered_pos > from_byte)
-			--line;
 	}
-	// hopefully line now points to the line where from_byte points to the first span
-	char *out = (char *)buf;
+	// hopefully line now points to the line where filter matches, and from_byte points to a span on that line,
+	// with its first span @ filtered_pos and end of spans @ line_end_pos
+	printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans\n", from_byte, max_bytes, line, console_current_line, filtered_pos, console_stream[line].spans_count);
+	dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
+
+	unsigned char *out = (char *)buf;
 	const char *end = out + max_bytes;
+	int bytecount = MIN(line_end_pos - from_byte, max_bytes);
+	memcpy(out, (char*)(console_stream[line].spans) + from_byte - filtered_pos, bytecount);
+	// TODO continue on lines past this one, up to max_bytes of span data
+	/*
 	for (; line <= console_current_line; ++line) {
+printf("    get_console_text_spans: line %d '%s': 1st sem %d\n", line, console_stream[line].text, console_stream[line].spans[0].semantic);
 		if (!filter || (console_stream[line].spans[0].start_column == 0
 				&& console_stream[line].spans[0].semantic == filter)) {
 			int len_bytes = MIN(console_stream[line].spans_count * sizeof(text_span_semantic), end - out);
-			if (out + len_bytes < end) {
-				memcpy(out, console_stream[line].spans, len_bytes);
+			if (out + len_bytes <= end) {
+				memcpy(out, console_stream[line].spans + from_byte - filtered_pos, MIN(line_end_pos - filtered_pos, len_bytes));
+				//~ printf("memcpy row %d start_col %d len %d sem %d: %d bytes %x %x %x %x %x %x %x %x\n",
+					//~ console_stream[line].spans[0].start_row, console_stream[line].spans[0].start_column,
+					//~ console_stream[line].spans[0].length, console_stream[line].spans[0].semantic, len_bytes,
+					//~ out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
 				out += len_bytes;
 			} else {
+				printf("break @ line: %d which has %d bytes (%d spans)\n", line, len_bytes, console_stream[line].spans_count);
 				break; // terminate for loop
 			}
 		}
+		else printf("line %d: nope: filter %d, first span's col %d sem %d\n", line, filter, console_stream[line].spans[0].start_column, console_stream[line].spans[0].semantic);
 	}
-	return out - (char *)buf;
+	*/
+	printf("read %d bytes\n", bytecount);
+	return bytecount;
 }
 
 int web_get_console(char *buff, int max)

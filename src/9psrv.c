@@ -256,8 +256,9 @@ static FidAux* newfidaux(Devfile *df) {
 			debug("newfidaux(df %p): fd %d %p\n", df, i, &open_fds[i]);
 			return &open_fds[i];
 		}
-		debug("FID %p already in use: fd %d %p\n", &open_fds[i], open_fds[i].fd, open_fds[i].file);
+		//~ debug("FID %p already in use: fd %d %p\n", &open_fds[i], open_fds[i].fd, open_fds[i].file);
 	}
+	fprintf(stderr, "newfidaux: MAX_OPEN_FDS exceeded\n");
 	return nil;
 }
 
@@ -351,7 +352,7 @@ void fs_walk(Ixp9Req *r) {
 		r->ofcall.rwalk.wqid[i].type = df->mode >> 24;
 		r->ofcall.rwalk.wqid[i].path = df->id;
 	}
-	debug("   fs_walk final %d name %s\n", i, name);
+	debug("   fs_walk %d final %d name %s\n", i, r->fid->fid, name);
 	r->newfid->aux = newfidaux(df);
 	r->ofcall.rwalk.nwqid = i;
 	ixp_respond(r, nil);
@@ -426,7 +427,7 @@ void fs_read(Ixp9Req *r) {
 		ixp_respond(r, nil);
 		return;
 	} else {
-		debug("   fs_read %s: req size %d offset %d\n", f->file->name, r->ifcall.tread.count, r->ifcall.tread.offset);
+		debug("fs_read %s: req size %d offset %d\n", f->file->name, r->ifcall.tread.count, r->ifcall.tread.offset);
 		r->ofcall.rread.data = ixp_emallocz(r->ifcall.tread.count);
 		if (! r->ofcall.rread.data) {
 			ixp_respond(r, nil);
@@ -500,7 +501,7 @@ void fs_open(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_open(%p) '%s' fd %d\n", r, f->file->name, f->fd);
+	debug("fs_open '%s' fd %d\n", f->file->name, f->fd);
 	/*
 	if (f->file->mode & P9_DMDIR) {
 		// nothing to do
@@ -514,13 +515,18 @@ void fs_open(Ixp9Req *r) {
 }
 
 void fs_create(Ixp9Req *r) {
-	debug("fs_create(%p)\n", r);
+	debug("fs_create: nope\n", r);
 	ixp_respond(r, Enoperm);
 }
 
 void fs_remove(Ixp9Req *r) {
-	debug("fs_remove(%p)\n", r);
+	debug("fs_remove: nope\n");
 	ixp_respond(r, Enoperm);
+}
+
+void fs_flush(Ixp9Req *r) {
+	debug("fs_flush: nothing to do\n");
+	ixp_respond(r, nil);
 }
 
 void fs_clunk(Ixp9Req *r) {
@@ -531,11 +537,6 @@ void fs_clunk(Ixp9Req *r) {
 	}
 	debug("fs_clunk(%p) fd %d file %p\n", f, f->fd, f->file);
 	f->fd = -1;
-	ixp_respond(r, nil);
-}
-
-void fs_flush(Ixp9Req *r) {
-	debug("fs_flush(%p)\n", r);
 	ixp_respond(r, nil);
 }
 
