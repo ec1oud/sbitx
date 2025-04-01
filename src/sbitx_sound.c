@@ -722,10 +722,11 @@ int sound_loop(){
 #endif
 */
 	//Note: the virtual cable samples queue should be flushed at the start of tx
- 	qloop.stall = 1;
+ 	//qloop.stall = 1;
 
 // ******************************************************************************************************** The Big Loop starts here
 
+//	FILE *pf = fopen("debug.raw", "w");
   while(sound_thread_continue) {
 
 		//restart the pcm capture if there is an error reading the samples
@@ -784,12 +785,12 @@ int sound_loop(){
 			//i = 0;
 			//j = 0;
 
-
 			for (int samples  = 0; samples < 1024; samples++)
 			{
 				input_i[samples] = input_q[samples] = q_read(&qloop);
 				//j++;
 			}
+			//fwrite(input_q, 1024, 4, pf);
 			//played_samples += 1024;
 		}  // end for use_virtual_cable test
 		else
@@ -1004,7 +1005,6 @@ int loopback_loop(){
 			//putchar('=');
 		}
 		// int ret_card = pcmreturn;
-
 		//fill up a local buffer, take only the left channel
 		// i = 0;
 
@@ -1017,6 +1017,8 @@ int loopback_loop(){
 		j=0;
 		clock_gettime(CLOCK_MONOTONIC, &gettime_now);
 		if (gettime_now.tv_sec != last_sec){
+			//if(use_virtual_cable)
+			//	printf("######sampling rate %d/%d\n", played_samples, nsamples);
 			last_sec = gettime_now.tv_sec;
 			//printf("Next reset in %d\n", (long)reset_loopback_interval - (last_sec - last_loopback_reset));
 			if (last_loopback_reset + (long)reset_loopback_interval < gettime_now.tv_sec)
