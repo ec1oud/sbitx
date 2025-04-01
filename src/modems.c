@@ -443,13 +443,12 @@ void modem_init(){
 //each mode has its peculiarities, like the ft8 will start only on 15th second boundary
 //psk31 will transmit a few spaces after the last character, etc.
 
-void modem_poll(int mode){
+void modem_poll(int mode, int ticks){
 	int tx_is_on = is_in_tx();
 	time_t t;
 	char buffer[10000];
 
 	millis_now = millis();
-	int bytes_available = get_tx_data_length();
 
 	if (current_mode != mode){
 		//flush out the past decodes
@@ -477,16 +476,19 @@ void modem_poll(int mode){
 
 	switch(mode){
 	case MODE_FT8:
-		t = time_sbitx();
+		if (ticks % 20)
+			t = time_sbitx();
 		ft8_poll(t % 60, tx_is_on);
 	break;
 	case MODE_CW:
-	case MODE_CWR:
+	case MODE_CWR: {
+		int bytes_available = get_tx_data_length();
 		cw_poll(bytes_available, tx_is_on);
+	}
 	break;
 
 	case MODE_RTTY:
-	case MODE_PSK31:
+	case MODE_PSK31: {
 		fldigi_call("main.get_trx_state", "", buffer);
 		//we will let the keyboard decide this
 		if (tx_is_on && !fldigi_in_tx){
@@ -502,11 +504,12 @@ void modem_poll(int mode){
 			if (fldigi_tx_stop() == -1)
 				puts("*fldigi rx failed");
 		}
+		int bytes_available = get_tx_data_length();
 		if (tx_is_on && bytes_available > 0)
 			fldigi_tx_more_data();
 		else
 			fldigi_read();
-
+	}
 	break;
 	}
 }

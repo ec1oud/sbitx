@@ -233,6 +233,11 @@ struct font_style font_table[] = {
 
 struct encoder enc_a, enc_b;
 
+struct field *cw_input = NULL;
+struct field *f_mode = NULL;
+struct field *f_text_in = NULL;
+struct field *f_pitch = NULL;
+
 #define MAX_FIELD_LENGTH 128
 
 #define FIELD_NUMBER 0
@@ -1681,8 +1686,7 @@ void draw_field(GtkWidget *widget, cairo_t *gfx, struct field *f)
 	}
 }
 
-static int mode_id(const char *mode_str)
-{
+static int mode_id(const char *mode_str){
 	if (!strcmp(mode_str, "CW"))
 		return MODE_CW;
 	else if (!strcmp(mode_str, "CWR"))
@@ -1703,7 +1707,7 @@ static int mode_id(const char *mode_str)
 		return MODE_AM;
 	else if (!strcmp(mode_str, "2TONE"))
 		return MODE_2TONE;
-	else if (!strcmp(mode_str, "DIGI"))
+	else if (!strncmp(mode_str, "DIGI", 4))
 		return MODE_DIGITAL;
 	else if (!strcmp(mode_str, "TUNE")) // Defined TUNE mode -
 		return MODE_CALIBRATE;
@@ -4549,8 +4553,9 @@ void set_filter_high_low(int hz)
 	if (hz < 50)
 		return;
 
-	struct field *f_mode = get_field("r1:mode");
-	struct field *f_pitch = get_field("rx_pitch");
+	f_mode = get_field("r1:mode");
+	f_text_in = get_field("text_in");
+	f_pitch = get_field("rx_pitch");
 
 	switch (mode_id(f_mode->value))
 	{
@@ -7144,12 +7149,10 @@ gboolean ui_tick(gpointer gook)
 		}
 	}
 
-	for (struct field *f = active_layout; f->cmd[0] > 0; f++)
-	{
-		if (f->is_dirty)
-		{
-			if (f->y >= 0)
-			{
+	//the Gtk invalidations can only be done from this thread, so..
+	for (struct field *f = active_layout; f->cmd[0] > 0; f++){
+		if (f->is_dirty){
+			if (f->y >= 0){
 				GdkRectangle r;
 				r.x = f->x;
 				r.y = f->y;
@@ -7180,55 +7183,22 @@ gboolean ui_tick(gpointer gook)
 		// write_console(STYLE_LOG, message);
 	}
 
-	// every 20 ticks call modem_poll to see if any modes need work done
-	if (ticks % 20 == 0)
-		modem_poll(mode_id(get_field("r1:mode")->value));
-	else
-	{
-		// calling modem_poll every 20 ticks isn't enough to keep up with a fast
-		// straight key, so now we go on _every_ tick in MODE_CW or MODE_CWR
-		if ((mode_id(get_field("r1:mode")->value)) == MODE_CW ||
-			(mode_id(get_field("r1:mode")->value)) == MODE_CWR)
-			modem_poll(mode_id(get_field("r1:mode")->value));
-	}
+	//the modem tick is called on every tick
+	//each modem has to optimize for efficient operation
+
+ 	modem_poll(mode_id(f_mode->value), ticks);
 
 	int tick_count = 50;
-
-	switch (mode_id(field_str("MODE")))
-	{
-	case MODE_CW:
-	case MODE_CWR:
-		tick_count = wf_spd; // Use wf_spd for CW and CWR modes
-		break;
-
-	case MODE_FT8:
-		if (wf_spd < 50)
-		{
-			tick_count = 50; // Ensure tick_count is at least 50 if wf_spd is too low
-		}
-		else
-		{
-			tick_count = wf_spd; // Use wf_spd as tick_count otherwise
-		}
-		break;
-
-	case MODE_AM:
-		tick_count = wf_spd; // Use wf_spd for AM mode
-		break;
-
-	default:
-		tick_count = wf_spd; // Default to wf_spd
-		break;
-	}
-
-	// Ensure tick_count is within reasonable bounds
-	if (tick_count < 1)
-	{
-		tick_count = 1; // Minimum tick_count to avoid division by zero or overly frequent updates
-	}
-	else if (tick_count > 500)
-	{
-		tick_count = 500; // Arbitrary maximum to prevent too infrequent updates
+	switch(mode_id(f_mode->value)){
+		case MODE_CW:
+		case MODE_CWR:
+			tick_count = 50;
+			break;
+		case MODE_FT8:
+			tick_count = 200;
+			break;
+		default:
+			tick_count = 100;
 	}
 	if (ticks >= tick_count)
 	{
@@ -8518,6 +8488,12 @@ int main(int argc, char *argv[])
 	// unlink any pending ft8 transmission
 	unlink("/home/pi/sbitx/ft8tx_float.raw");
 	call_wipe();
+
+	// cache some fields for fast lookup
+	cw_input = get_field_by_label("CW_INPUT");
+	f_mode = get_field_by_label("MODE");
+	f_pitch= get_field_by_label("PITCH");
+	f_text_in = get_field_by_label("TEXT");
 
 	ui_init(argc, argv);
 	hw_init();
