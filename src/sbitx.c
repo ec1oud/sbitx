@@ -96,7 +96,7 @@ static int tx_compress = 0;
 static double spectrum_speed = 0.3;
 static int in_tx = 0;
 static int rx_tx_ramp = 0;
-static int sidetone = 2000000000;
+static int sidetone = 100;
 struct vfo tone_a, tone_b, am_carrier; // these are audio tone generators
 static int tx_use_line = 0;
 struct rx *rx_list = NULL;
@@ -1164,8 +1164,8 @@ void tx_process(
 	//memcpy(output_speaker, input_mic, sizeof(int32_t) * n_samples);
 	//return;
 
-	if (pf_debug)
-		fwrite(input_mic, sizeof(int32_t), n_samples, pf_debug);
+	//if (pf_debug)
+	//	fwrite(input_mic, sizeof(int32_t), n_samples, pf_debug);
 
 	struct rx *r = tx_list;
 
@@ -1284,7 +1284,7 @@ void tx_process(
 		else
 		{
 			// If not in voice modes, use the sidetone
-			output_speaker[j] = i_sample * sidetone;
+			output_speaker[j] = input_mic[j]/1000 * sidetone;
 			q_sample = 0;
 		}
 
@@ -1297,6 +1297,9 @@ void tx_process(
 		__imag__ fft_in[i] = q_sample;
 		m++;
 	}
+
+	//if (pf_debug)
+	//	fwrite(output_speaker, sizeof(int32_t), MAX_BINS/2, pf_debug);
 
 	// push the samples to the remote audio queue, decimated to 16000 samples/sec
 	for (i = 0; i < MAX_BINS / 2; i += 6)
@@ -2138,7 +2141,7 @@ void sdr_request(char *request, char *response)
 	{ // between 100 and 0
 		float t_sidetone = atof(value);
 		if (0 <= t_sidetone && t_sidetone <= 100)
-			sidetone = atof(value) * 20000000;
+			sidetone = t_sidetone;
 	}
 	else if (!strcmp(cmd, "mod"))
 	{

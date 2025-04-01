@@ -203,7 +203,7 @@ void modem_set_pitch(int pitch, int mode);
 void modem_init();
 int get_tx_data_byte(char *c);
 int	get_tx_data_length();
-void modem_poll(int mode);
+void modem_poll(int mode, int ticks);
 float modem_next_sample(int mode);
 void modem_abort();
 
