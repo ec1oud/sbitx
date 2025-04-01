@@ -12,23 +12,22 @@
 	The cw_get_sample() is also called from the thread that does DSP, so stalling
 	it is dangerous.
 
-	The modem_poll is called about 10 to 20 times a second from 
+	The modem_poll is called about 10 to 20 times a second from
 	the 'user interface' thread.
 
-	The key is physically read from the GPIO by calling key_poll() through
-	modem_poll and the value is stored as cw_key_state.
-
-	The cw_get_sample just reads this cw_key_state instead of polling the GPIO.
+	The key is physically read from the GPIO by calling key_poll()
+	the key_poll stores the values read from the ISR of the PTT(DOT) and DASH
+	gpio lines
 
 	the cw_read_key() routine returns the next dash/dot/space/, etc to be sent
 	the word 'symbol' is used to denote a dot, dash, a gaps that are dot, dash or
-	word long. These are defined in sdr.h (they shouldn't be) 
-	
+	word long. These are defined in sdr.h (they shouldn't be)
+
 	Rxing:
 	The CW decoder is entirely written from the scratch after a preliminary
 	read of a few Arduino decoders.
 
-	All the state variables are stored in the struct cw_decoder. 
+	All the state variables are stored in the struct cw_decoder.
 	You could run multiple instances of the cw_decoder to simultaneously
 	decoder a band of signals. In the current implementation, we only use
 	one cw_decoder.
@@ -38,36 +37,36 @@
 	1. Each cw_decoder has a struct bin that is initialized to a particular
 	central frequency.
 
-	2. the n_bins field of cw_decoder takes that many samples at a time 
+	2. the n_bins field of cw_decoder takes that many samples at a time
 	and tried to calculate the magnitude of the signal at that freq.
 
 	3. We maintained a running average of the highs and the lows (corresponding
 	to the signal peak and the noise floor). These are updated in a moving
-	average as high_level and threshold elements in cw_rx_update_levels() 
+	average as high_level and threshold elements in cw_rx_update_levels()
 	function.
-	
+
 	4. In cw_rx_process (), we threshold the signal magnitude to generate
 	'mark' and 'space'. Each of them in placed into a string of struct symbol.
 	We maintain a track of the magnitude, time (in terms of ticks).
 
 	5. the cw_rx_denoise() skips small bumps of less than 4 ticks in a mark
 	or space and improves the readability to a great degree. denoiser
-	essentialy produces a bit queue of the marks and spaces in a 32-bit 
-	integer used as a bit filed. it watches for a continuous 4 bits of 
+	essentialy produces a bit queue of the marks and spaces in a 32-bit
+	integer used as a bit filed. it watches for a continuous 4 bits of
 	zeros or ones before flipping between mark and space.
 
-	6. cw_rx_detect_symbol(), produces a stream of mark/space symbols stored 
+	6. cw_rx_detect_symbol(), produces a stream of mark/space symbols stored
 	in cw_decoder's sybmol_str array. Whenever an inter letter space
 	is detected, the string of symbols is submitted to cw_rx_match_letter().
 
 	7. The match_letter uses the symbols in terms of their magnitude, duration
 	to first-fit a pattern from the morse_rx_table. This table should ideally
 	be read from a text file. It could, in the future also contain callsign
-	database. 
+	database.
 	This function needs to be worked on to work probabilitisically with
 	best match where the magnitude of the signal is marginally across the
-	threshold between the signal and the noisefloor. 
-	
+	threshold between the signal and the noisefloor.
+
 */
 #include <stdio.h>
 #include <sys/time.h>   //added to support debug timing code
@@ -223,7 +222,7 @@ struct morse_rx morse_rx_table[] = {
 struct bin {
 	float coeff;
 	float sine;
-	float cosine; 
+	float cosine;
 	float omega;
 	int k;
 	double scalingFactor;
@@ -231,7 +230,7 @@ struct bin {
 	int n;
 };
 
-#define MAX_SYMBOLS 100 
+#define MAX_SYMBOLS 100
 
 struct symbol {
 	char is_mark;
@@ -252,7 +251,7 @@ struct cw_decoder{
 	int magnitude;
 	int symbol_magnitude; // track the magnitude of the current symbol
 	int wpm; // as set by the user
-	
+
 	struct bin signal;
 
 	// this is a shift register of the states encountered
@@ -267,7 +266,6 @@ struct cw_decoder decoder;
 /* cw tx state variables */
 static unsigned long millis_now = 0;
 
-static int cw_key_state = 0;
 static int cw_period;
 static struct vfo cw_tone, cw_env;
 static int keydown_count=0;			//counts down pause afer a keydown is finished
@@ -293,20 +291,20 @@ static uint8_t cw_get_next_symbol(){  //symbol to translate into CW_DOT, CW_DASH
 
 	if (!symbol_next)
 		return CW_IDLE;
-	
+
 	uint8_t s = *symbol_next++;
 
 	switch(s){
-		case '.': 
+		case '.':
 			return CW_DOT;
-		case '-': 
+		case '-':
 			return  CW_DASH;
 		case 0:
 			symbol_next = NULL; //we are at the end of the string
 			return CW_DASH_DELAY;
-		case '/': 
+		case '/':
 			return CW_DASH_DELAY;
-		case ' ': 
+		case ' ':
 			return  CW_WORD_DELAY;
 	}
 	return CW_IDLE;
@@ -321,6 +319,9 @@ static int cw_read_key(){
 	char c;
 
 	//process cw key before other cw inputs (macros, keyboard)
+	int cw_key_state = key_poll();
+
+	//preference to the keyer activity
 	if (cw_key_state != CW_IDLE) {
 		return cw_key_state;
 	}
@@ -350,7 +351,7 @@ static int cw_read_key(){
 			write_console(STYLE_CW_TX, buff);
 		}
 	if (symbol_next)
-		return cw_get_next_symbol(); 
+		return cw_get_next_symbol();
 	else
 		return CW_IDLE;
 }
@@ -360,15 +361,15 @@ static int cw_read_key(){
 float cw_tx_get_sample() {
   float sample = 0;        // the shaped CW level (0 to 1)
   uint8_t symbol_now = cw_read_key();
-  
-  if (!keydown_count && !keyup_count) { 
+
+  if (!keydown_count && !keyup_count) {
     millis_now = millis();  //REVERT FARHAN JUL 2024 CW FIX
     if (cw_tone.freq_hz != get_pitch()) // set CW pitch if needed
       vfo_start( &cw_tone, get_pitch(), 0);
   }
 
   switch (cw_current_symbol) {
-  case CW_IDLE:                   // this is the start case 
+  case CW_IDLE:                   // this is the start case
     if (symbol_now & CW_DOWN) {   // the straight key has just gone down
       keydown_count = 1;   // this was 2000, did not seem right ....
       keyup_count = 0;
@@ -404,9 +405,9 @@ float cw_tx_get_sample() {
       keyup_count = 0;
       //modem_poll() did not detect key-up but we are going to check right now
       //(this is an experiment to try to cut off some long dots and dashes)
-	    //cw_key_state = key_poll();  
+	    //cw_key_state = key_poll();
 	    //if (cw_key_state != CW_DOWN) {  // early detection of key-up!
-		    //cw_current_symbol = CW_IDLE; 
+		    //cw_current_symbol = CW_IDLE;
 	      //keydown_count = 0;
         //keyup_count = 1;}        // experiment ends here
     } else {                       // key was down but now it's not
@@ -465,12 +466,12 @@ float cw_tx_get_sample() {
   // Key the transmitter with some shaping on the leading and trailing edge
   if (keydown_count > 0){
 	if(cw_envelope < 0.999)  // ramping up the leading edge
-		cw_envelope = ((vfo_read(&cw_env)/FLOAT_SCALE) + 1)/2; 
+		cw_envelope = ((vfo_read(&cw_env)/FLOAT_SCALE) + 1)/2;
 	keydown_count--;
   }
   else { //keydown_count is zero
 		if(cw_envelope > 0.001)  // ramping down on the trailing edge
-		  cw_envelope = ((vfo_read(&cw_env)/FLOAT_SCALE) + 1)/2; 
+		  cw_envelope = ((vfo_read(&cw_env)/FLOAT_SCALE) + 1)/2;
 		if (keyup_count > 0)
 		  keyup_count--;
 	}
@@ -482,14 +483,14 @@ float cw_tx_get_sample() {
   //if macro or keyboard characters remain in the buffer
   //prevent switching from xmit to rcv and cutting off macro
   if (cw_bytes_available != 0)
-    cw_tx_until = millis_now + 1000;  
+    cw_tx_until = millis_now + 1000;
   return sample / 8;
 }
 
 
 static FILE *pfout = NULL; //this is debugging out, not used normally
 
-static void cw_rx_bin_init(struct bin *p, float freq, int n, 
+static void cw_rx_bin_init(struct bin *p, float freq, int n,
 	float sampling_freq){
 
   p->k = (int) (0.5 + ((n * freq) / sampling_freq));
@@ -509,15 +510,15 @@ static int cw_rx_bin_detect(struct bin *p, int32_t *data){
 	  float Q0;
   	Q0 = p->coeff * Q1 - Q2 + (float) (*data);
   	Q2 = Q1;
-  	Q1 = Q0;	
+  	Q1 = Q0;
 		data++;
  	}
 	double real = (Q1 * p->cosine - Q2) / p->scalingFactor;
   double imag = (Q1 * p->sine) / p->scalingFactor;
 
- 	int  magnitude = sqrt(real*real + imag*imag); 
+ 	int  magnitude = sqrt(real*real + imag*imag);
 	return magnitude;
-} 
+}
 
 static void cw_rx_match_letter(struct cw_decoder *p){
 	char code[MAX_SYMBOLS];
@@ -529,7 +530,7 @@ static void cw_rx_match_letter(struct cw_decoder *p){
 	int len = p->next_symbol;
 	int in_mark = 0;
 	int total_ticks = 0;
-	int min_dot = (p->dash_len / 6); 
+	int min_dot = (p->dash_len / 6);
 	code[0] = 0;
 	int i = 0;
 
@@ -547,7 +548,7 @@ static void cw_rx_match_letter(struct cw_decoder *p){
 					strcat(code, "-");
 					//track the dashes
 					int new_dash = ((p->dash_len * 3) + total_ticks)/4;
-					int init_dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* p->wpm); 
+					int init_dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* p->wpm);
 					if (init_dash_len/2 <  new_dash && new_dash < init_dash_len * 2)
 						p->dash_len = new_dash;
 					//printf("%d\n", p->dash_len);
@@ -558,7 +559,7 @@ static void cw_rx_match_letter(struct cw_decoder *p){
 		}
 		total_ticks += p->symbol_str[i].ticks;
 		i++;
-	}	
+	}
 
 	p->next_symbol = 0;
 	for (int i = 0; i < sizeof(morse_rx_table)/sizeof(struct morse_rx); i++)
@@ -576,7 +577,7 @@ static void cw_rx_add_symbol(struct cw_decoder *p, char symbol){
 		p->next_symbol = 0;
 	p->symbol_str[p->next_symbol].is_mark = symbol == ' '? 0: 1;
 	p->symbol_str[p->next_symbol].ticks = p->ticker;
-	p->symbol_str[p->next_symbol].magnitude = 
+	p->symbol_str[p->next_symbol].magnitude =
 		((p->symbol_str[p->next_symbol].magnitude *10) + p->magnitude)/11;
 	p->next_symbol++;
 }
@@ -587,8 +588,8 @@ Using large n_bins usually does away with that.
 
 */
 
-#define HIGH_DECAY 100 
-#define NOISE_DECAY 100 
+#define HIGH_DECAY 100
+#define NOISE_DECAY 100
 
 static void cw_rx_update_levels(struct cw_decoder *p){
 	int new_high = p->magnitude;
@@ -596,14 +597,14 @@ static void cw_rx_update_levels(struct cw_decoder *p){
 	if (p->high_level < p->magnitude)
 		p->high_level = new_high;
 	else
-		p->high_level = (p->magnitude + ((HIGH_DECAY -1) 
+		p->high_level = (p->magnitude + ((HIGH_DECAY -1)
 			* p->high_level))/HIGH_DECAY;
 
-	if (p->magnitude <  (p->high_level * 4)/10 ){ 
+	if (p->magnitude <  (p->high_level * 4)/10 ){
 		// clamp the lows to prevent inf
 		if (p->magnitude < 100)
 			p->magnitude = 100;
-		p->noise_floor = (p->magnitude + ((NOISE_DECAY -1) 
+		p->noise_floor = (p->magnitude + ((NOISE_DECAY -1)
 			* p->noise_floor))/NOISE_DECAY;
 		p->symbol_magnitude += p->magnitude;
 	}
@@ -628,8 +629,8 @@ void cw_rx_denoise(struct cw_decoder *p){
 			break;
 	default:
 		p->mark = 30000;
-		break;	
-	}	
+		break;
+	}
 }
 
 static void cw_rx_detect_symbol(struct cw_decoder *p){
@@ -667,13 +668,13 @@ static void cw_rx_detect_symbol(struct cw_decoder *p){
 static void cw_rx_bin(struct cw_decoder *p, int32_t *samples){
 
 	int sig_now = cw_rx_bin_detect(&p->signal, samples);
-	
+
 	p->magnitude = sig_now;
 
 	if (p->magnitude > (p->high_level * 6)/10){
 			p->sig_state = 30000;
 	}
-	else if (p->magnitude <  (p->high_level * 4)/10 ){ 
+	else if (p->magnitude <  (p->high_level * 4)/10 ){
 		p->sig_state = 0;
 	}
 
@@ -693,8 +694,8 @@ static void cw_rx_bin(struct cw_decoder *p, int32_t *samples){
 		if (snr1 > 20)
 			snr = 10000;
 		for (int i = 0; i < p->n_bins; i++){
-			fwrite(&mag,2,1,pfout);	
-		//fwrite(&mark,2,1,pfout);	
+			fwrite(&mag,2,1,pfout);
+		//fwrite(&mark,2,1,pfout);
 			fwrite(&p->mark, 2, 1, pfout);
 			fwrite(&sym_mag, 2, 1, pfout);
 			fwrite(&snr, 2, 1, pfout);
@@ -712,10 +713,10 @@ void cw_rx(int32_t *samples, int count){
 	}
 
 	//we decimate the samples from 96000 to 12000
-	//this hard coded here 
+	//this hard coded here
 	int32_t s[128];
-	for (int i = 0; i < decoder.n_bins; i++){	
-		s[i] = samples[i * 8] >> 8;			
+	for (int i = 0; i < decoder.n_bins; i++){
+		s[i] = samples[i * 8] >> 8;
 	}
 	cw_rx_bin(&decoder, s);
 }
@@ -723,14 +724,14 @@ void cw_rx(int32_t *samples, int count){
 /* For now, we will init the dash_len
 	 to be 20 wpm initially and track it from there on.
 	 This may cause a few inital missed letters until the
-	 dash_len converges the senders speed. But it is 
+	 dash_len converges the senders speed. But it is
 	 better than a manual way to set it.
-	 At 20 wpm, it will scale from 10 wpm to 40 wpm. 
+	 At 20 wpm, it will scale from 10 wpm to 40 wpm.
 	 Below, 10 wpm you don't really need a decoder.
 	 For those transmitting at higher than 40 wpm, .. some other day
 */
 
-void cw_init(){	
+void cw_init(){
 	//cw rx initializeation
 	decoder.ticker = 0;
 	decoder.n_bins = N_BINS;
@@ -743,12 +744,12 @@ void cw_init(){
 	decoder.wpm = 12;
 
 	// dot len (in msec)) = 1200/wpm; dash len = 3600/wpm
-	// each block of nbins = n_bins/sampling seconds; 
-	// dash len is (3600 / wpm)/ ((nbins * 1000)/samping_freq) 
-	decoder.dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* INIT_WPM); 
+	// each block of nbins = n_bins/sampling seconds;
+	// dash len is (3600 / wpm)/ ((nbins * 1000)/samping_freq)
+	decoder.dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* INIT_WPM);
 
 	cw_rx_bin_init(&decoder.signal, INIT_TONE, N_BINS, SAMPLING_FREQ);
-	
+
 	//init cw tx with some reasonable values
   //cw_env shapes the envelope of the cw waveform
   //frequency was at 50 (20 ms rise time), changed it to 200 (4 ms rise time)
@@ -764,7 +765,6 @@ void cw_init(){
 
 void cw_poll(int bytes_available, int tx_is_on){
 	cw_bytes_available = bytes_available;
-	cw_key_state = key_poll();
 	int wpm  = field_int("WPM");
 	cw_period = (12 * 9600)/wpm;
 
@@ -776,13 +776,13 @@ void cw_poll(int bytes_available, int tx_is_on){
 	// check if the wpm has changed
 	if (wpm != decoder.wpm){
 		decoder.wpm = wpm;
-		decoder.dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* wpm); 
-	}	
+		decoder.dash_len = (18 * SAMPLING_FREQ) / (5 * N_BINS* wpm);
+	}
 
 	// TX ON if bytes are avaiable (from macro/keyboard) or key is pressed
-	// of we are in the middle of symbol (dah/dit) transmission 
-	
-	if (!tx_is_on && (cw_bytes_available || cw_key_state || (symbol_next && *symbol_next)) > 0){
+	// if we are in the middle of symbol (dah/dit) transmission
+
+	if (!tx_is_on && (cw_bytes_available || key_poll() || (symbol_next && *symbol_next)) > 0){
 		tx_on(TX_SOFT);
 		millis_now = millis();
 		cw_tx_until = get_cw_delay() + millis_now;
