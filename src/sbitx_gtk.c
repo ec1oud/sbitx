@@ -6349,11 +6349,13 @@ void bin_dump(int length, uint8_t *data)
 	(including newlines)? \a filter can be 0 (STYLE_LOG) to include all
 	lines from the console, or a specific style.
 */
-int console_current_length(sbitx_style filter)
+int console_current_length(sbitx_style filter, int last_line)
 {
 	int line = 0;
+	if (last_line < 0)
+		last_line = console_current_line;
 	if (!filter) { // !filter is equivalent to filter == STYLE_LOG
-		line = console_current_line;
+		line = last_line;
 		while (line > 0 && !console_stream[line].len)
 			--line;
 		return console_stream[line].char_pos_start + console_stream[line].len;
@@ -6362,7 +6364,7 @@ int console_current_length(sbitx_style filter)
 	// Usually the first span defines the style for the line, if the span's start_column == 0
 	// Since we use memset to initialize each console_line, 0 is the default for everything
 	int ret = 0;
-	for (; line <= console_current_line; ++line)
+	for (; line <= last_line; ++line)
 		if (console_stream[line].spans[0].start_column == 0 &&
 				console_stream[line].spans[0].semantic == filter)
 			ret += console_stream[line].len;
@@ -6383,11 +6385,13 @@ int console_span_count(int line)
 	If we call get_console_text_spans() with large max, how many bytes will we get?
 	\a filter can be 0 (STYLE_LOG) to include all lines from the console, or a specific style.
 */
-int console_current_spans_length(sbitx_style filter)
+int console_current_spans_length(sbitx_style filter, int last_line)
 {
 	int line = 0;
+	if (last_line < 0)
+		last_line = console_current_line;
 	if (!filter) { // !filter is equivalent to filter == STYLE_LOG
-		line = console_current_line;
+		line = last_line;
 		while (line > 0 && !console_stream[line].len)
 			--line;
 		return console_stream[line].char_pos_start + console_stream[line].len;
@@ -6396,7 +6400,7 @@ int console_current_spans_length(sbitx_style filter)
 	// Usually the first span defines the style for the line, if the span's start_column == 0
 	// Since we use memset to initialize each console_line, 0 is the default for everything
 	int span_count = 0;
-	for (; line <= console_current_line; ++line)
+	for (; line <= last_line; ++line)
 		if (console_stream[line].spans[0].start_column == 0 &&
 				console_stream[line].spans[0].semantic == filter)
 			span_count += console_stream[line].spans_count; // console_span_count(line);
@@ -6406,6 +6410,11 @@ int console_current_spans_length(sbitx_style filter)
 time_t console_last_time()
 {
 	return console_current_time;
+}
+
+int console_last_line()
+{
+	return console_current_line;
 }
 
 /*!
@@ -6469,7 +6478,7 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 void dump_spans(text_span_semantic *buf, int count, int which)
 {
 	for (int s = 0; s < count; ++s) {
-		unsigned char *sb = (buf + s);
+		unsigned char *sb = (unsigned char *)(buf + s);
 		printf("   span %d: %02x %02x %02x %02x %02x %02x %02x %02x: r %d c %d l %d s %d %s\n",
 			s, sb[0], sb[1], sb[2], sb[3], sb[4], sb[5], sb[6], sb[7],
 			buf[s].start_row, buf[s].start_column, buf[s].length, buf[s].semantic,
@@ -6512,8 +6521,8 @@ int get_console_text_spans(text_span_semantic *buf, int max_bytes, int from_byte
 	}
 	// hopefully line now points to the line where filter matches, and from_byte points to a span on that line,
 	// with its first span @ filtered_pos and end of spans @ line_end_pos
-	printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans\n", from_byte, max_bytes, line, console_current_line, filtered_pos, console_stream[line].spans_count);
-	dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
+	//~ printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans\n", from_byte, max_bytes, line, console_current_line, filtered_pos, console_stream[line].spans_count);
+	//~ dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
 
 	unsigned char *out = (char *)buf;
 	const char *end = out + max_bytes;
@@ -6541,7 +6550,7 @@ printf("    get_console_text_spans: line %d '%s': 1st sem %d\n", line, console_s
 		else printf("line %d: nope: filter %d, first span's col %d sem %d\n", line, filter, console_stream[line].spans[0].start_column, console_stream[line].spans[0].semantic);
 	}
 	*/
-	printf("read %d bytes\n", bytecount);
+	printf("   read %d bytes\n", bytecount);
 	return bytecount;
 }
 

@@ -40,14 +40,24 @@
 
 #include "sdr_ui.h"
 
-/* Datatypes */
+/* Forward declarations */
 typedef struct Devfile Devfile;
+typedef struct FidAux FidAux;
+static int size_read(const Devfile *df);
+static int read_field(const Devfile *df, char *out, int len, int offset);
+static void write_field(const char *name, const char *val, int len, int offset);
+static void stat_text(IxpStat *s, const Devfile *df, int data_index);
+static int read_text(const Devfile *df, char *out, int len, int offset);
+static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index);
+static int read_text_spans(const Devfile *df, char *out, int len, int offset);
+
+/* Datatypes */
 struct Devfile {
 	uint64_t id; // aka qid.path
 	char	*name;
 	int parent;
 	sbitx_style semantic_filter;
-	void	(*dostat)(IxpStat *s, const Devfile *df);
+	void	(*dostat)(IxpStat *s, const Devfile *df, int data_index);
 	int	(*doread)(const Devfile *df, char*, int, int);
 	const char	*read_name;
 	void	(*dowrite)(const char*, const char*, int, int);
@@ -58,10 +68,11 @@ struct Devfile {
 	uint32_t version;
 };
 
-typedef struct FidAux FidAux;
 struct FidAux {
 	int fd;
 	int offset;
+	int data_index; // for the console: console_last_line() at the time the spans were opened (clients: please open spans first!)
+	void *srvaux; // client_id from the attach call
 	Devfile *file;
 };
 
@@ -71,6 +82,71 @@ static char
 	Enofile[] = "file not found",
 	Ebadvalue[] = "bad value",
 	Ebadfid[] = "bad FID";
+
+typedef enum {
+	QID_ROOT = 0,
+	QID_SETTINGS = 1,
+	QID_SETTINGS_CALL = 2,
+	QID_SETTINGS_GRID = 3,
+	QID_TEXT = 0x10, // whole console
+	QID_MODES = 0x100,
+	QID_MODES_SSB = 0x101,
+	QID_MODES_FT8 = 0x102,
+	QID_SSB_CHANNEL1 = 0x1000,
+	QID_FT8_CHANNEL1 = 0x2000,
+} DevfileID;
+
+typedef enum {
+	QID_CH_FREQ = 1,
+	QID_CH_IF_GAIN = 2,
+	QID_CH_RECEIVED = 3,
+	QID_CH_RECEIVED_META = 4,
+	QID_CH_RECEIVED_SPANS = 5,
+	QID_CH_SENT = 6,
+	QID_MASK = 0xFF
+} ChannelDevfileID;
+
+/* Table of all files to be served up */
+#define SEM_NONE STYLE_LOG
+static Devfile devfiles[] = {
+	{ QID_ROOT, "/", -1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_SETTINGS, "settings", QID_ROOT, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_SETTINGS_CALL, "callsign", QID_SETTINGS, SEM_NONE,
+		nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0, 0 },
+	{ QID_SETTINGS_GRID, "grid", QID_SETTINGS, SEM_NONE,
+		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
+	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
+		stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { QID_MODES_SSB, "ssb", QID_MODES,
+		//~ nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { QID_SSB_CHANNEL1, "1", QID_MODES_SSB,
+		//~ nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	//~ { QID_SSB_CHANNEL1 + QID_CH_FREQ, "frequency", QID_SSB_CHANNEL1,
+		//~ nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+	//~ { QID_SSB_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_SSB_CHANNEL1,
+		//~ nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+	{ QID_MODES_FT8, "ft8", QID_MODES, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1, "1", QID_MODES_FT8, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ, "frequency", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
+		STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META, "received.meta", QID_FT8_CHANNEL1,
+		STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_SPANS, "spans", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
+		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
+		STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+};
+static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
 /* Macros */
 // TODO output timestamps
@@ -87,13 +163,14 @@ static char *user;
 static int debuglevel = 1;
 static time_t start_time;
 static char *argv0;
+static uint64_t next_client_id = 0xa44a000000000000;
 
-static int size_read(const struct Devfile *df) {
+static int size_read(const Devfile *df) {
 	char buf[MAX_FILE_SIZE];
 	return df->doread(df, buf, MAX_FILE_SIZE, 0);
 }
 
-static int read_field(const struct Devfile *df, char *out, int len, int offset) {
+static int read_field(const Devfile *df, char *out, int len, int offset) {
 	char val[64];
 	get_field_value(df->read_name, val); // TODO unsafe: pass sizeof as len
 	int vlen = strlen(val);
@@ -110,7 +187,7 @@ static void write_field(const char *name, const char *val, int len, int offset) 
 
 static void update_console_mtimes_and_sizes(time_t mtime);
 
-static void stat_text(IxpStat *s, const Devfile *df) {
+static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
@@ -121,12 +198,13 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = console_current_length(df->semantic_filter);
+	s->length = console_current_length(df->semantic_filter, data_index);
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text '%s' filter %d len %d mtime %u\n", df->name, df->semantic_filter, s->length, s->mtime);
+	debug("stat_text '%s' 0x%x filter %d console last line %d len %d mtime %u\n",
+		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime);
 
 	// side-effect: usually the console has a newer mtime than last time;
 	// so update mtimes on all 'text' files and their parent dirs, recursively.
@@ -135,11 +213,11 @@ static void stat_text(IxpStat *s, const Devfile *df) {
 }
 
 static int read_text(const Devfile *df, char *out, int len, int offset) {
-	debug("read_text '%s' len %d offset %d\n", df->name, len, offset);
+	debug("read_text '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text(out, len, offset, df->semantic_filter);
 }
 
-static void stat_text_spans(IxpStat *s, const Devfile *df) {
+static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {
 	// expectation of the file server's user: verify that the struct packs as intended
 	assert(sizeof(text_span_semantic) == sizeof(uint64_t));
 	s->type = 0;
@@ -152,41 +230,19 @@ static void stat_text_spans(IxpStat *s, const Devfile *df) {
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = console_current_spans_length(df->semantic_filter);
+	s->length = console_current_spans_length(df->semantic_filter, data_index);
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text_spans '%s' filter %d len %d mtime %u\n", df->name, df->semantic_filter, s->length, s->mtime);
+	debug("stat_text_spans '%s' 0x%x filter %d console last line %d len %d mtime %u\n",
+		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime);
 }
 
 static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
-	debug("read_text_spans '%s' len %d offset %d\n", df->name, len, offset);
+	debug("read_text_spans '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text_spans((text_span_semantic *)out, len, offset, df->semantic_filter);
 }
-
-#define SEM_NONE STYLE_LOG
-static Devfile devfiles[] = {
-	{ 0, "/", -1, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ 1, "settings", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ 2, "callsign", 1, SEM_NONE, nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0, 0 },
-	{ 3, "grid", 1, SEM_NONE, nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
-	{ 40, "text", 0, SEM_NONE, stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ 100, "modes", 0, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	//~ { 101, "ssb", 100, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	//~ { 1000, "1", 101, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	//~ { 1001, "frequency", 1000, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
-	//~ { 1002, "if_gain", 1000, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
-	{ 102, "ft8", 100, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ 2000, "1", 102, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ 2001, "frequency", 2000, SEM_NONE, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
-	{ 2002, "if_gain", 2000, SEM_NONE, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
-	{ 2003, "received", 2000, STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ 2004, "received.meta", 2000, STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ 2005, "spans", 2004, STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ 2006, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
-};
-static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
 static void update_console_mtimes_and_sizes(time_t mtime) {
 	for (int f = devfiles_count - 1; f > 0; --f)
@@ -246,19 +302,30 @@ static void usage() {
 }
 
 /* Utility Functions */
-static FidAux* newfidaux(Devfile *df) {
+static FidAux* newfidaux(Devfile *df, void *srvaux) {
 	// find an empty slot in open_fds
 	for (int i = 0; i < MAX_OPEN_FDS; ++i) {
 		if (!open_fds[i].file) {
 			open_fds[i].file = df;
 			open_fds[i].fd = i;
 			open_fds[i].offset = 0;
-			debug("newfidaux(df %p): fd %d %p\n", df, i, &open_fds[i]);
+			open_fds[i].data_index = -1;
+			open_fds[i].srvaux = srvaux;
+			debug("newfidaux(df %p srv-aux %p): fd %d %p\n", df, srvaux, i, &open_fds[i]);
 			return &open_fds[i];
 		}
 		//~ debug("FID %p already in use: fd %d %p\n", &open_fds[i], open_fds[i].fd, open_fds[i].file);
 	}
 	fprintf(stderr, "newfidaux: MAX_OPEN_FDS exceeded\n");
+	return nil;
+}
+
+static FidAux *findfidaux(void *srvaux, FidAux *start_from) {
+	const int startfrom_idx = start_from ? start_from - open_fds : 0;
+	//~ if (start_from) debug("findfidaux: start from %p rather than %p: index %d\n", start_from, open_fds, startfrom_idx);
+	for (int i = startfrom_idx; i < MAX_OPEN_FDS; ++i)
+		if (open_fds[i].srvaux == srvaux)
+			return &open_fds[i];
 	return nil;
 }
 
@@ -274,9 +341,9 @@ static Devfile *find_file(const char *name) {
 	return nil;
 }
 
-static void dostat(IxpStat *s, const Devfile *df) {
+static void dostat(IxpStat *s, const Devfile *df, int index) {
 	if (df->dostat) {
-		df->dostat(s, df);
+		df->dostat(s, df, index);
 		return;
 	}
 
@@ -304,14 +371,14 @@ void rerrno(Ixp9Req *r, char *m) {
 }
 
 void fs_attach(Ixp9Req *r) {
-
 	debug("fs_attach(%p fid %p)\n", r, r->fid);
-
 	r->fid->qid.type = QTDIR;
 	r->fid->qid.path = (uintptr_t)r->fid;
-	r->fid->aux = newfidaux(devfiles);
+	r->fid->aux = newfidaux(devfiles, (void*)next_client_id);
+	r->srv->aux = (void*)next_client_id;
 	r->ofcall.rattach.qid = r->fid->qid;
 	ixp_respond(r, nil);
+	++next_client_id;
 }
 
 void fs_walk(Ixp9Req *r) {
@@ -324,13 +391,13 @@ void fs_walk(Ixp9Req *r) {
 		ixp_respond(r, Enofile);
 		return;
 	}
-	debug("fs_walk(%p %d) %p from %s\n", f, r->fid->fid, f->file, f->file->name);
+	debug("fs_walk(%p %d) srv-aux %p %p from %s\n", f, r->fid->fid, r->srv->aux, f->file, f->file->name);
 	name[0] = 0;
 
 	Devfile *df = find_file(f->file->name);
 	if (!df)
 		ixp_respond(r, Enofile);
-	debug("   found starting qid %d mode 0x%x %s\n", df->id, df->mode, df->name);
+	debug("   found starting qid 0x%d mode 0x%x %s\n", df->id, df->mode, df->name);
 
 	// build full path; populate qid type and ID to return
 	for(i=0; i < r->ifcall.twalk.nwname; i++) {
@@ -352,8 +419,8 @@ void fs_walk(Ixp9Req *r) {
 		r->ofcall.rwalk.wqid[i].type = df->mode >> 24;
 		r->ofcall.rwalk.wqid[i].path = df->id;
 	}
-	debug("   fs_walk %d final %d name %s\n", i, r->fid->fid, name);
-	r->newfid->aux = newfidaux(df);
+	debug("   fs_walk %d srv-aux %p fid %d name %s\n", i, r->srv->aux, r->fid->fid, name);
+	r->newfid->aux = newfidaux(df, r->srv->aux);
 	r->ofcall.rwalk.nwqid = i;
 	ixp_respond(r, nil);
 }
@@ -372,7 +439,7 @@ void fs_stat(Ixp9Req *r) {
 	}
 	debug("fs_stat(%p) %s\n", r, f->file->name);
 
-	dostat(&s, f->file);
+	dostat(&s, f->file, f->data_index);
 	r->fid->qid = s.qid;
 	r->ofcall.rstat.nstat = size = ixp_sizeof_stat(&s);
 	buf = ixp_emallocz(size);
@@ -403,7 +470,7 @@ void fs_read(Ixp9Req *r) {
 		buf = ixp_emallocz(size);
 		m = ixp_message(buf, size, MsgPack);
 
-		debug("fs_read fd %d: dir starting from offset %d in qid %d '%s'; total files %d\n", f->fd, f->offset, f->file->id, f->file->name, devfiles_count);
+		debug("fs_read fd %d srv-aux %p: dir starting from offset %d in qid 0x%x '%s'; total files %d\n", f->fd, r->srv->aux, f->offset, f->file->id, f->file->name, devfiles_count);
 
 		/*  for each entry in dir, populate IxpStat s,
 			then use that to append to IxpMsg m
@@ -412,10 +479,10 @@ void fs_read(Ixp9Req *r) {
 		int found_count = 0;
 		for (int i = 0; i < devfiles_count; ++i) {
 			if (devfiles[i].parent != f->file->id || found_count < f->offset) {
-//~ printf("skipping '%s' par %d not? %d found_count %d offset %d\n", devfiles[i].name, devfiles[i].parent, f->file->id, found_count, f->offset);
+//~ debug("skipping '%s' par %d not? %d found_count %d offset %d\n", devfiles[i].name, devfiles[i].parent, f->file->id, found_count, f->offset);
 				continue;
 			}
-			dostat(&s, &devfiles[i]);
+			dostat(&s, &devfiles[i], f->data_index);
 			offset += ixp_sizeof_stat(&s);
 			ixp_pstat(&m, &s);
 			++found_count;
@@ -426,14 +493,19 @@ void fs_read(Ixp9Req *r) {
 		r->ofcall.rread.data = (char*)m.data;
 		ixp_respond(r, nil);
 		return;
-	} else {
-		debug("fs_read %s: req size %d offset %d\n", f->file->name, r->ifcall.tread.count, r->ifcall.tread.offset);
+	} else if (f->file->doread) {
+		debug("fs_read '%s' qid 0x%x: req size %d offset %d\n", f->file->name, f->file->id, r->ifcall.tread.count, r->ifcall.tread.offset);
 		r->ofcall.rread.data = ixp_emallocz(r->ifcall.tread.count);
 		if (! r->ofcall.rread.data) {
 			ixp_respond(r, nil);
 			return;
 		}
 		r->ofcall.rread.count = f->file->doread(f->file, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
+		if ((f->file->id & QID_FT8_CHANNEL1) && (f->file->id & QID_MASK) == QID_CH_RECEIVED && f->data_index >= 0) {
+			// unlock / end transaction, in case new data is coming in. The client will find out about that at the next fs_stat().
+			debug("   qid 0x%x: resetting console last line (was %d)\n", f->file->id, f->data_index);
+			f->data_index = -1;
+		}
 		if (r->ofcall.rread.count < 0)
 			rerrno(r, Enoperm);
 		else
@@ -496,12 +568,30 @@ void fs_write(Ixp9Req *r) {
 }
 
 void fs_open(Ixp9Req *r) {
+	// the client had to walk to the file first, therefore this request should include the FidAux
 	FidAux *f = r->fid->aux;
 	if (!f || !f->file) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_open '%s' fd %d\n", f->file->name, f->fd);
+	int data_index = -1;
+	// If the client has opened "spans" first (as it should) and is now opening some text file
+	// that has spans (such as "received"), use the same data_index (console line number).
+	if (!strcmp(f->file->name, "received")) {
+		FidAux *spans_fidaux = findfidaux(r->srv->aux, nil);
+		while (spans_fidaux && spans_fidaux->file &&
+				!((spans_fidaux->file->id & QID_FT8_CHANNEL1) && (spans_fidaux->file->id & QID_MASK) == QID_CH_RECEIVED_SPANS) )
+			spans_fidaux = findfidaux(r->srv->aux, spans_fidaux + 1);
+		if (spans_fidaux) {
+			data_index = spans_fidaux->data_index;
+			debug("fs_open '%s': got console last line %d from previously-opened '%s'\n", f->file->name, data_index, spans_fidaux->file->name);
+		}
+	}
+	if (data_index < 0)
+		data_index = console_last_line();
+	f->data_index = data_index;
+	debug("fs_open '%s' fd %d aux %p srv-aux %p; console last line %d\n", f->file->name, f->fd, r->aux, r->srv->aux, data_index);
+
 	/*
 	if (f->file->mode & P9_DMDIR) {
 		// nothing to do
