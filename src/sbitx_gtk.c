@@ -273,8 +273,9 @@ struct console_line
 	text_span_semantic spans[MAX_CONSOLE_LINE_STYLES];
 };
 static struct console_line console_stream[MAX_CONSOLE_LINES];
-int console_current_line = 0;
-int console_selected_line = -1;
+uint32_t console_current_line = 0; // line number (start_row) in spans: increments until it wraps
+int console_current_i = 0; // index in console_stream: always < MAX_CONSOLE_LINES
+int console_selected_i = -1;
 char console_selected_callsign[12];
 time_t console_current_time = 0;
 
@@ -1254,7 +1255,7 @@ void console_init()
 	struct field *f = get_field("#console");
 	assert(f);
 	f->is_dirty = TRUE;
-	console_current_line = 0;
+	console_current_i = 0;
 }
 
 void web_add_string(char *string)
@@ -1355,24 +1356,25 @@ void web_write(int style, char *data)
 int console_init_next_line()
 {
 	// +1 for implied newline
-	console_stream[console_current_line].len = strlen(console_stream[console_current_line].text) + 1;
+	console_stream[console_current_i].len = strlen(console_stream[console_current_i].text) + 1;
+	console_current_i++;
 	console_current_line++;
-	if (console_current_line == MAX_CONSOLE_LINES){
-		console_current_line = 0;
-		printf("---- console wrap: back to current line 0\n");
+	if (console_current_i == MAX_CONSOLE_LINES){
+		console_current_i = 0;
+		printf("---- console wrap: back to current line 0, char_pos_start 0\n");
 	}
-	memset(&console_stream[console_current_line], 0, sizeof(struct console_line));
-	if (console_current_line) {
-		console_stream[console_current_line].char_pos_start =
-			console_stream[console_current_line - 1].char_pos_start +
-			console_stream[console_current_line - 1].len;
+	memset(&console_stream[console_current_i], 0, sizeof(struct console_line));
+	if (console_current_i) {
+		console_stream[console_current_i].char_pos_start =
+			console_stream[console_current_i - 1].char_pos_start +
+			console_stream[console_current_i - 1].len;
 //~ printf("console_init_next_line: prev line: %d '%s' start %d len %d\n",
-//~ console_current_line - 1,
-//~ console_stream[console_current_line - 1].text,
-//~ console_stream[console_current_line - 1].char_pos_start,
-//~ console_stream[console_current_line - 1].len);
+//~ console_current_i - 1,
+//~ console_stream[console_current_i - 1].text,
+//~ console_stream[console_current_i - 1].char_pos_start,
+//~ console_stream[console_current_i - 1].len);
 	}
-	return console_current_line;
+	return console_current_i;
 }
 
 void write_to_remote_app(int style, const char *text)
@@ -1436,14 +1438,14 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		gtk_popover_popdown(GTK_POPOVER(console_popover));
 
 	const char *next_char = text;
-	char *console_line_string = console_stream[console_current_line].text;
+	char *console_line_string = console_stream[console_current_i].text;
 	console_current_time = time_sbitx();
-	text_span_semantic *console_line_spans = console_stream[console_current_line].spans;
+	text_span_semantic *console_line_spans = console_stream[console_current_i].spans;
 
 	int output_span_i = 0;
 	int col = console_line_spans[0].length;
 	const text_span_semantic *next_sem = sem;
-	//~ printf("write_console_semantic line %d '%s'\n", console_current_line, text);
+	//~ printf("write_console_semantic line %d idx %d '%s'\n", console_current_line, console_current_i, text);
 
 	while (*next_char)
 	{
@@ -1451,20 +1453,22 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		while (next_sem < sem + sem_count && next_sem->start_column == text_i) {
 			text_span_semantic *out_sem = &console_line_spans[output_span_i];
 			*out_sem = *next_sem; // copy whole struct
-			out_sem->start_row = console_current_line; // only useful for output to spans file, and should increment forever (TODO)
+			out_sem->start_row = console_current_line; // only useful for output to spans file
 			//~ printf("    line %d span %d row %d col %d len %d: style %d\n",
-				//~ console_current_line, output_span_i, out_sem->start_row, out_sem->start_column, out_sem->length, out_sem->semantic); // debug
+				//~ console_current_i, output_span_i, out_sem->start_row, out_sem->start_column, out_sem->length, out_sem->semantic); // debug
 			++output_span_i;
 			++next_sem;
 		}
 		char c = *next_char;
 		if (c == '\n' || col >= console_cols) {
 			console_line_string[col] = 0;
-			console_stream[console_current_line].spans_count = output_span_i;
+			console_stream[console_current_i].spans_count = output_span_i;
 			console_init_next_line();
-			console_line_string = console_stream[console_current_line].text;
-			console_line_spans = console_stream[console_current_line].spans;
-			console_line_spans->start_row = console_current_line;
+			// ^^^ the previous line must be 100% complete now, and
+			// console_current_spans_length() and stat_text() must agree which line it ends on now
+			console_line_string = console_stream[console_current_i].text;
+			console_line_spans = console_stream[console_current_i].spans;
+			console_line_spans->start_row = console_current_i;
 			col = 0;
 			output_span_i = 0;
 		}
@@ -1497,13 +1501,13 @@ void draw_console(cairo_t *gfx, struct field *f)
 	}
 
 	int y = f->y;
-	int start_line = console_current_line - n_lines;
+	int start_line = console_current_i - n_lines;
 	if (start_line < 0)
 		start_line += MAX_CONSOLE_LINES;
 
 	for (int i = 0; i <= n_lines; i++) {
 		struct console_line *line = console_stream + start_line;
-		if (start_line == console_selected_line)
+		if (start_line == console_selected_i)
 			fill_rect(gfx, f->x, y + 1, f->width, font_table[line->spans[0].semantic].height + 1, SELECTED_LINE);
 		// tracking where we are, horizontally
 		int x = 0;
@@ -1592,8 +1596,8 @@ int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 
 void popover_call_button_clicked(GtkWidget *widget, void *data) {
 	char ft8_message[64];
-	// strcpy(ft8_message, console_stream[console_selected_line].text);
-	hd_strip_decoration(ft8_message, console_stream[console_selected_line].text);
+	// strcpy(ft8_message, console_stream[console_selected_i].text);
+	hd_strip_decoration(ft8_message, console_stream[console_selected_i].text);
 	// TODO this is silly: use console_selected_callsign instead of re-parsing the whole line
 	ft8_process(ft8_message, FT8_START_QSO);
 	gtk_popover_popdown(GTK_POPOVER(console_popover));
@@ -1605,7 +1609,7 @@ int console_long_press(void *p)
 		struct field *console = get_field("#console");
 		const int line_height = font_table[console->font_index].height;
 		int call_start = console_extract_semantic(console_selected_callsign,
-			sizeof(console_selected_callsign), console_selected_line, STYLE_CALLER);
+			sizeof(console_selected_callsign), console_selected_i, STYLE_CALLER);
 		if (call_start < 0)
 			return G_SOURCE_REMOVE;
 		field_set("CALL", console_selected_callsign);
@@ -1613,10 +1617,10 @@ int console_long_press(void *p)
 		GdkRectangle callsign_bounds;
 		callsign_bounds.x = console_avg_char_width * call_start;
 		callsign_bounds.width = console_avg_char_width * call_len;
-		callsign_bounds.y = console->y + console->height - (console_current_line - console_selected_line + 1) * line_height;
+		callsign_bounds.y = console->y + console->height - (console_current_i - console_selected_i + 1) * line_height;
 		callsign_bounds.height = line_height;
 		//~ printf("long press: sel %d cur %d; '%s' from '%s' @ x %d..%d y %d\n",
-			//~ console_selected_line, console_current_line, console_selected_callsign, console_stream[console_selected_line].text,
+			//~ console_selected_i, console_current_i, console_selected_callsign, console_stream[console_selected_i].text,
 			//~ callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
 
 		//~ char log_entries[1024];
@@ -1675,7 +1679,7 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 	int line_height = font_table[f->font_index].height;
 	int n_lines = (f->height / line_height) - 1;
 	int l = 0;
-	int start_line = console_current_line - n_lines;
+	int start_line = console_current_i - n_lines;
 	static guint timer = 0;
 
 	switch (event)
@@ -1688,7 +1692,7 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		l = start_line + ((b - f->y) / line_height);
 		if (l < 0)
 			l += MAX_CONSOLE_LINES;
-		console_selected_line = l;
+		console_selected_i = l;
 		f->is_dirty = 1;
 		f->updated_at = millis();
 		if (event == GDK_MOTION_NOTIFY && timer)
@@ -1702,10 +1706,10 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		f->updated_at = millis();
 		return 1;
 	case FIELD_EDIT:
-		if (a == MIN_KEY_UP && console_selected_line > start_line)
-			console_selected_line--;
-		else if (a == MIN_KEY_DOWN && console_selected_line < start_line + n_lines - 1)
-			console_selected_line++;
+		if (a == MIN_KEY_UP && console_selected_i > start_line)
+			console_selected_i--;
+		else if (a == MIN_KEY_DOWN && console_selected_i < start_line + n_lines - 1)
+			console_selected_i++;
 		break;
 	}
 	return 0;
@@ -6353,7 +6357,7 @@ int console_current_length(sbitx_style filter, int last_line)
 {
 	int line = 0;
 	if (last_line < 0)
-		last_line = console_current_line;
+		last_line = console_current_i;
 	if (!filter) { // !filter is equivalent to filter == STYLE_LOG
 		line = last_line;
 		while (line > 0 && !console_stream[line].len)
@@ -6366,8 +6370,13 @@ int console_current_length(sbitx_style filter, int last_line)
 	int ret = 0;
 	for (; line <= last_line; ++line)
 		if (console_stream[line].spans[0].start_column == 0 &&
-				console_stream[line].spans[0].semantic == filter)
+				console_stream[line].spans[0].length > 0 &&
+				console_stream[line].spans[0].semantic == filter) {
 			ret += console_stream[line].len;
+			if (console_stream[line].len != console_stream[line].spans[0].length)
+				printf("line %d: first span length %d != line length %d\n",
+					console_stream[line].len, console_stream[line].spans[0].length);
+		}
 	return ret;
 }
 
@@ -6389,21 +6398,18 @@ int console_current_spans_length(sbitx_style filter, int last_line)
 {
 	int line = 0;
 	if (last_line < 0)
-		last_line = console_current_line;
-	if (!filter) { // !filter is equivalent to filter == STYLE_LOG
-		line = last_line;
-		while (line > 0 && !console_stream[line].len)
-			--line;
-		return console_stream[line].char_pos_start + console_stream[line].len;
-	}
-	// If we have a filter, we need to add up character counts from matching lines.
+		last_line = console_current_i;
+	// Add up span counts from matching lines.
 	// Usually the first span defines the style for the line, if the span's start_column == 0
 	// Since we use memset to initialize each console_line, 0 is the default for everything
 	int span_count = 0;
 	for (; line <= last_line; ++line)
-		if (console_stream[line].spans[0].start_column == 0 &&
-				console_stream[line].spans[0].semantic == filter)
+		if (console_stream[line].spans[0].start_column == 0 && console_stream[line].spans[0].length > 0 &&
+				(!filter || console_stream[line].spans[0].semantic == filter)) {
 			span_count += console_stream[line].spans_count; // console_span_count(line);
+			printf("console_current_spans_length including %d spans from line %d (%d)\n",
+					console_stream[line].spans_count, line, console_stream[line].spans[0].start_row);
+		}
 	return span_count * sizeof(uint64_t);
 }
 
@@ -6414,7 +6420,7 @@ time_t console_last_time()
 
 int console_last_line()
 {
-	return console_current_line;
+	return console_current_i;
 }
 
 /*!
@@ -6459,7 +6465,7 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 	char *out = buf;
 	const char *end = buf + max;
 	//~ debug("copying console text starting from char %d line %d: max %d\n", from_char, line, end - out);
-	for (; line <= console_current_line && out < end; ++line) {
+	for (; line <= console_current_i && out < end; ++line) {
 		//~ debug("        console text from line %d range %d -> %d: outpos %d max %d\n",
 			//~ line, console_stream[line].char_pos_start,
 			//~ console_stream[line].char_pos_start + console_stream[line].len, out - buf, end - out);
@@ -6471,7 +6477,7 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 		}
 	}
 	printf("get_console_text from byte %d: ending before line %d; current line %d\n",
-		from_char, line, console_current_line);
+		from_char, line, console_current_i);
 	return out - buf;
 }
 
@@ -6516,13 +6522,16 @@ int get_console_text_spans(text_span_semantic *buf, int max_bytes, int from_byte
 				filtered_pos = line_end_pos;
 			}
 		}
-		if (line >= MAX_CONSOLE_LINES)
+		if (line >= MAX_CONSOLE_LINES) {
+			printf("get_console_text_spans returning early: looking for from_byte %d, last line_end_pos is %d\n", from_byte, line_end_pos);
 			return 0;
+		}
 	}
 	// hopefully line now points to the line where filter matches, and from_byte points to a span on that line,
 	// with its first span @ filtered_pos and end of spans @ line_end_pos
-	//~ printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans\n", from_byte, max_bytes, line, console_current_line, filtered_pos, console_stream[line].spans_count);
-	//~ dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
+	printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans in '%s'\n",
+		from_byte, max_bytes, line, console_current_i, filtered_pos, console_stream[line].spans_count, console_stream[line].text);
+	dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
 
 	unsigned char *out = (char *)buf;
 	const char *end = out + max_bytes;
@@ -6530,7 +6539,7 @@ int get_console_text_spans(text_span_semantic *buf, int max_bytes, int from_byte
 	memcpy(out, (char*)(console_stream[line].spans) + from_byte - filtered_pos, bytecount);
 	// TODO continue on lines past this one, up to max_bytes of span data
 	/*
-	for (; line <= console_current_line; ++line) {
+	for (; line <= console_current_i; ++line) {
 printf("    get_console_text_spans: line %d '%s': 1st sem %d\n", line, console_stream[line].text, console_stream[line].spans[0].semantic);
 		if (!filter || (console_stream[line].spans[0].start_column == 0
 				&& console_stream[line].spans[0].semantic == filter)) {
