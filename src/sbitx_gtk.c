@@ -1490,7 +1490,7 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 void draw_console(cairo_t *gfx, struct field *f)
 {
 	int line_height = font_table[f->font_index].height;
-	int n_lines = (f->height / line_height) - 1;
+	int n_lines = MIN(MAX_CONSOLE_LINES, (f->height / line_height) - 1);
 
 	rect(gfx, f->x, f->y, f->width, f->height, COLOR_CONTROL_BOX, 1);
 
