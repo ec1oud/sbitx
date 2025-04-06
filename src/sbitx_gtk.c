@@ -6476,8 +6476,8 @@ int get_console_text(char *buf, int max, int from_char, sbitx_style filter)
 				*out++ = '\n';
 		}
 	}
-	printf("get_console_text from byte %d: ending before line %d; current line %d\n",
-		from_char, line, console_current_i);
+	//~ printf("get_console_text from byte %d: ending before line %d; current line %d\n",
+		//~ from_char, line, console_current_i);
 	return out - buf;
 }
 
@@ -6531,7 +6531,7 @@ int get_console_text_spans(text_span_semantic *buf, int max_bytes, int from_byte
 	// with its first span @ filtered_pos and end of spans @ line_end_pos
 	printf("get_console_text_spans @ %d max %d: line %d of %d @ offset %d has %d spans in '%s'\n",
 		from_byte, max_bytes, line, console_current_i, filtered_pos, console_stream[line].spans_count, console_stream[line].text);
-	dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
+	//~ dump_spans(console_stream[line].spans, MAX_CONSOLE_LINE_STYLES, (from_byte - filtered_pos) / sizeof(text_span_semantic));
 
 	unsigned char *out = (char *)buf;
 	const char *end = out + max_bytes;
@@ -6558,8 +6558,8 @@ printf("    get_console_text_spans: line %d '%s': 1st sem %d\n", line, console_s
 		}
 		else printf("line %d: nope: filter %d, first span's col %d sem %d\n", line, filter, console_stream[line].spans[0].start_column, console_stream[line].spans[0].semantic);
 	}
-	*/
 	printf("   read %d bytes\n", bytecount);
+	*/
 	return bytecount;
 }
 
