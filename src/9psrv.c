@@ -203,8 +203,8 @@ static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text '%s' 0x%x filter %d console last line %d len %d mtime %u\n",
-		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime);
+	debug("stat_text '%s' 0x%x filter %d console last line %d len %d mtime %u version %u\n",
+		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime, s->qid.version);
 
 	// side-effect: usually the console has a newer mtime than last time;
 	// so update mtimes on all 'text' files and their parent dirs, recursively.
@@ -235,8 +235,8 @@ static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
-	debug("stat_text_spans '%s' 0x%x filter %d console last line %d len %d mtime %u\n",
-		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime);
+	debug("stat_text_spans '%s' 0x%x filter %d console last line %d len %d mtime %u version %u\n",
+		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime, s->qid.version);
 }
 
 static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
@@ -245,23 +245,31 @@ static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
 }
 
 static void update_console_mtimes_and_sizes(time_t mtime) {
+	int updated_parents = 0;
 	for (int f = devfiles_count - 1; f > 0; --f)
 		if (devfiles[f].dostat == stat_text) {
+			if (mtime > devfiles[f].mtime) {
+				devfiles[f].mtime = mtime;
+				++devfiles[f].version;
+			}
+			if (updated_parents)
+				continue;
 			int parent_sought = devfiles[f].parent;
-			//~ debug("mtime %u; checking for ancestor %d of %d '%s' (total files %d)\n",
-				//~ mtime, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
+			//~ debug("mtime %u version %u; checking for ancestor %d of %d '%s' (total files %d)\n",
+				//~ mtime, devfiles[f].version, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
 			for (int j = f - 1; j >= 0; --j) {
 				if (devfiles[j].id == parent_sought) {
 					if (mtime > devfiles[j].mtime) {
 						devfiles[j].mtime = mtime;
 						++devfiles[j].version;
-						debug("   updated %d '%s': set mtime %u version %u\n",
-							devfiles[j].id, devfiles[j].name, devfiles[j].mtime, devfiles[j].version);
+						//~ debug("   updated %d '%s': set mtime %u version %u\n",
+							//~ devfiles[j].id, devfiles[j].name, devfiles[j].mtime, devfiles[j].version);
 					}
 					parent_sought = devfiles[j].parent;
 				}
 			}
-			return; // one trip up the hierarchy is enough (at least for one mode, one channel)
+			// one trip up the hierarchy is enough (at least for one mode, one channel)
+			updated_parents = 1;
 		}
 }
 
