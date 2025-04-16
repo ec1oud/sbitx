@@ -1,3 +1,13 @@
+create table messages (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	mode TEXT,
+	freq INTEGER,
+	qso_date INTEGER,
+	qso_time INTEGER,
+	is_outgoing INTEGER DEFAULT 0,	
+	data TEXT DEFAULT ""
+);
+
 create table logbook (
 	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 	mode TEXT,

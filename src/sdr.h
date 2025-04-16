@@ -155,6 +155,7 @@ static inline double const cnrm(const complex double x){
 #define MODE_DIGITAL 9
 #define MODE_2TONE 10
 #define MODE_CALIBRATE 11
+#define MODE_TUNE 12
 
 struct rx {
 	long tuned_bin;					//tuned bin (this should translate to freq)
