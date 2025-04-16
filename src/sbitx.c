@@ -1050,31 +1050,31 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 
 	// Apply RXEQ after Modem only on non-digital modes
 	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE)
-{
-    if (rx_eq_is_enabled == 1)
-    {
-        // Step 1: Apply EQ with built-in normalization and clamping
-        apply_eq(&rx_eq, output_speaker, n_samples, 48000.0);
+	{
+		if (rx_eq_is_enabled == 1)
+		{
+			// Step 1: Apply EQ with built-in normalization and clamping
+			apply_eq(&rx_eq, output_speaker, n_samples, 48000.0);
 
-        // Step 2: Optionally apply soft limiting (only if additional smoothing is required)
-        const double limiter_threshold = 0.8 * 500000000; // Lower limiter threshold for headroom
+			// Step 2: Optionally apply soft limiting (only if additional smoothing is required)
+			const double limiter_threshold = 0.8 * 500000000; // Lower limiter threshold for headroom
 
-        for (int i = 0; i < n_samples; i++)
-        {
-            double sample = output_speaker[i];
+			for (int i = 0; i < n_samples; i++)
+			{
+				double sample = output_speaker[i];
 
-            // Apply smooth limiting if sample exceeds threshold
-            if (fabs(sample) > limiter_threshold)
-            {
-                sample = limiter_threshold * tanh(sample / limiter_threshold);
-            }
+				// Apply smooth limiting if sample exceeds threshold
+				if (fabs(sample) > limiter_threshold)
+				{
+					sample = limiter_threshold * tanh(sample / limiter_threshold);
+				}
 
-            output_speaker[i] = (int32_t)sample;
-        }
-    }
+				output_speaker[i] = (int32_t)sample;
+			}
+		}
+	}
 }
 
-}
 void read_power()
 {
 	uint8_t response[4];
