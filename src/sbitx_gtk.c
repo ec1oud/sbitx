@@ -1469,6 +1469,41 @@ void draw_console(cairo_t *gfx, struct field *f)
 	}
 }
 
+/*!
+	From the console line at the given \a line number, see if the semantic \a sem
+	can be found.  If so, copy the substring to \a out (which has a max length \a len),
+	and return the start position where it was found.
+
+	Returns -1 if it was not found.
+*/
+int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
+	int _start = -1, _len = -1;
+	for (int i = 0; i < MAX_CONSOLE_LINE_STYLES; ++i)
+		if (console_stream[line].spans[i].semantic == sem) {
+			_start = console_stream[line].spans[i].start_column;
+			_len = console_stream[line].spans[i].length;
+			--_len; // point to the last char
+			if (console_stream[line].text[_start + _len] == ' ')
+				--_len;
+			// remote brackets from hashed callsigns
+			if (sem == STYLE_CALLER || sem == STYLE_CALLEE || sem == STYLE_MYCALL) {
+				if (console_stream[line].text[_start + _len] == '>')
+					--_len;
+				if (console_stream[line].text[_start ] == '<') {
+					++_start;
+					--_len;
+				}
+			}
+			++_len; // point to the null terminator
+			break;
+		}
+	if (_start < 0 || _len < 0)
+		return -1;
+	char *end = stpncpy(out, console_stream[line].text + _start, MIN(_len, outlen));
+	*end = 0;
+	return _start;
+}
+
 int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 {
 	char buff[100], *p, *q;
@@ -5761,7 +5796,7 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
 		case GDK_KEY_rightarrow:
 		case GDK_KEY_leftarrow:
 		case GDK_KEY_Left:
-		case GDK_KEY_Right:
+		case GDK_KEY_Right: {
 			struct field *f;
 			int forward = 1;
 			if (event->keyval == GDK_KEY_ISO_Left_Tab | event->keyval == GDK_KEY_leftarrow | event->keyval == GDK_KEY_Left)
@@ -5830,6 +5865,7 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
 			focus_field_without_toggle(f);
 			return FALSE;
 			break;
+      }
 		}
 	}
 
