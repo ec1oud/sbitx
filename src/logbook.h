@@ -8,3 +8,5 @@ void logbook_list_open();
 void logbook_open();
 bool logbook_grid_exists(char *id);
 bool logbook_caller_exists(char * id);
+void logbook_delete(int id);
+void message_add(char *mode, unsigned int frequency, int outgoing, char *message);

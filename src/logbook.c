@@ -292,6 +292,48 @@ void logbook_open(){
 		printf("Logbook indexes created.\n");
     }
 }
+/*
+create table messages (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	mode TEXT,
+	freq INTEGER,
+	qso_date INTEGER,
+	qso_time INTEGER,
+	is_outgoing INTEGER DEFAULT 0,
+	data TEXT DEFAULT ""
+);
+*/
+
+void message_add(char *mode, unsigned int frequency, int outgoing, char *message){
+	char date_str[10], time_str[10], freq_str[12], statement[1000], *err_msg;
+
+
+	/* get the frequency */
+	get_field_value("r1:freq", freq_str);
+	frequency = frequency + atoi(freq_str);
+
+	/* get the time */
+	time_t log_time = time_sbitx();
+	struct tm *tmp = gmtime(&log_time);
+
+	int date_utc = ((tmp->tm_year + 1900)*10000)
+		+ ((tmp->tm_mon+1) * 100) + (tmp->tm_mday);
+	int time_utc = (tmp->tm_hour * 10000) + (tmp->tm_min * 100) + tmp->tm_sec;
+
+	sprintf(statement,
+		"INSERT INTO messages (mode, freq, qso_date, qso_time, is_outgoing, data)"
+		" VALUES('%s', '%d', '%d', '%d',  '%d','%s');",
+			mode, frequency, date_utc, time_utc, outgoing, message);
+
+	if (db == NULL)
+		logbook_open();
+
+	int res = sqlite3_exec(db, statement, 0,0, &err_msg);
+	if (res != 0) {
+		printf("logbook_add db: %d err=%s", res, err_msg);
+		if (err_msg) sqlite3_free(err_msg);
+	}
+}
 
 void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 		char *rst_recv, char *exchange_recv, int tx_power, int tx_vswr, char *comments){
@@ -994,6 +1036,11 @@ void search_update(GtkWidget *entry, gpointer search_box) {
  	search_button_clicked(NULL, entry);
 }
 
+void logbook_delete(int id){
+	char statement[100], *err_msg;
+	sprintf(statement, "DELETE FROM logbook WHERE id='%d';", id);
+	sqlite3_exec(db, statement, 0,0, &err_msg);
+}
 
 void delete_button_clicked(GtkWidget *entry, gpointer tree_view) {
   gchar *qso_id, *mode, *freq, *callsign, *rst_sent, *rst_recv, *exchange_sent,

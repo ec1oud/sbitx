@@ -25,7 +25,7 @@ static uint32_t sleepTimeNanos;
 static struct timespec nanoSleepTime;
 static uint32_t delayTicks;
 int i2c_started = 0;
-
+static int i2c_error = 0;
 void i2cbb_init(uint8_t pin_number_sda, uint8_t pin_number_scl)
 {
 	PIN_SDA = pin_number_sda;
@@ -78,6 +78,7 @@ static void arbitration_lost(char* where)
 {
 	printf("I2CBB connection lost:");
 	puts(where);
+	int i2c_error = -1;
 }
 
 static void i2c_sleep()
@@ -98,7 +99,7 @@ static void i2c_delay()
 		;
 }
 
-static void i2c_start_cond()
+void i2c_start_cond()
 {
 	if (i2c_started) { // if started, do a restart cond
 		// set SDA to 1
@@ -112,6 +113,7 @@ static void i2c_start_cond()
 	}
 	if (read_SDA() == 0) {
 		arbitration_lost("i2c_start_cond");
+		i2c_error = -1;
 	}
 	// SCL is high, set SDA from 1 to 0.
 	clear_SDA();
@@ -143,8 +145,9 @@ static void i2c_stop_cond(void)
 }
 
 // Write a bit to I2C bus
-static void i2c_write_bit(int bit)
+static int i2c_write_bit(int bit)
 {
+	int e = 0;
 	if (bit) {
 		read_SDA();
 	} else {
@@ -160,9 +163,12 @@ static void i2c_write_bit(int bit)
 	// If SDA is high, check that nobody else is driving SDA
 	if (bit && read_SDA() == 0) {
 		arbitration_lost("i2c_write_bit");
+		i2c_error = -1;
+		e = -1;
 	}
 	i2c_delay();
 	clear_SCL();
+	return e;
 }
 
 // Read a bit from I2C bus
@@ -190,7 +196,7 @@ static int i2c_read_bit()
 static int i2c_write_byte(int send_start, int send_stop, uint8_t byte)
 {
 	unsigned bit;
-	int nack;
+	int nack = 0;
 	if (send_start)
 		i2c_start_cond();
 	for (bit = 0; bit < 8; bit++) {
@@ -266,13 +272,29 @@ int32_t i2cbb_read_byte_data(uint8_t i2c_address, uint8_t command)
 	return -1;
 }
 
+int i2c_busy = 0;
+
+// 7 bit address + 1 bit read/write
+// read = 1, write = 0
+// http://www.totalphase.com/support/articles/200349176-7-bit-8-bit-and-10-bit-I2C-Slave-Addressing
 // This executes the SMBus “block write” protocol, returning negative errno else zero on success.
-int32_t i2cbb_write_i2c_block_data(uint8_t i2c_address, uint8_t command, uint8_t length,
-    const uint8_t* values)
+
+int32_t i2cbb_write_i2c_block_data(uint8_t i2c_address, uint8_t command,
+    uint8_t length, const uint8_t* values)
 {
 	// 7 bit address + 1 bit read/write
 	// read = 1, write = 0
 	// http://www.totalphase.com/support/articles/200349176-7-bit-8-bit-and-10-bit-I2C-Slave-Addressing
+
+	for (int i = 0; i < 100; i++) {
+		if (!i2c_busy)
+			break;
+		printf("i2c busy\n");
+		delay(2);
+	}
+	i2c_busy++;
+
+	i2c_error = 0;
 	uint8_t address = (i2c_address << 1) | 0;
 
 	if (!i2c_write_byte(1, 0, address)) {
@@ -286,8 +308,11 @@ int32_t i2cbb_write_i2c_block_data(uint8_t i2c_address, uint8_t command, uint8_t
 
 			i2c_stop_cond();
 
-			if (!errors)
-				return 0;
+			if (!errors) {
+				i2c_busy--;
+				return i2c_error;
+			}
+			i2c_error = -1;
 			printf("i2cbb: write byte failed at index %d\n", i);
 		} else {
 			i2c_stop_cond();
@@ -295,8 +320,10 @@ int32_t i2cbb_write_i2c_block_data(uint8_t i2c_address, uint8_t command, uint8_t
 		}
 	} else {
 		i2c_stop_cond();
-		printf("i2cbb: address failed\n");
+		printf("i2cbb: address failed %x, cmd %x, length%d\n",
+		    address, command, length);
 	}
+	i2c_busy--;
 	return -1;
 }
 
@@ -324,7 +351,7 @@ int32_t i2cbb_read_i2c_block_data(uint8_t i2c_address, uint8_t command, uint8_t 
 	address = (i2c_address << 1) | 1;
 	if (i2c_write_byte(1, 0, address)) {
 		i2c_stop_cond();
-		printf("i2cbb.c:writing address failed at %x\n", i2c_address);
+		//		printf("i2cbb.c:writing address failed at %x\n", i2c_address);
 		return -1;
 	}
 
