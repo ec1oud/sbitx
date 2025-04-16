@@ -1512,7 +1512,7 @@ void popover_call_button_clicked(GtkWidget *widget, void *data) {
 	gtk_popover_popdown(GTK_POPOVER(console_popover));
 }
 
-int console_long_press(void *)
+int console_long_press(void *p)
 {
 	if (!strcmp(get_field("r1:mode")->value, "FT8")) {
 		struct field *console = get_field("#console");
@@ -5379,7 +5379,7 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
 		case GDK_KEY_rightarrow:
 		case GDK_KEY_leftarrow:
 		case GDK_KEY_Left:
-		case GDK_KEY_Right:
+		case GDK_KEY_Right: {
 			struct field *f;
 			int forward = 1;
 			if (event->keyval == GDK_KEY_ISO_Left_Tab | event->keyval == GDK_KEY_leftarrow | event->keyval == GDK_KEY_Left)
@@ -5448,6 +5448,7 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
 			focus_field_without_toggle(f);
 			return FALSE;
 			break;
+      }
 		}
 	}
 
