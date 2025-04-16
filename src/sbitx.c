@@ -40,16 +40,19 @@ FILE *pf_debug = NULL;
 
 #define TX_LINE 4
 #define TX_POWER 27
+#define RX_LINE 16
 #define BAND_SELECT 5
 #define LPF_A 5
 #define LPF_B 6
 #define LPF_C 10
 #define LPF_D 11
+#define LPF_E 26
 
 #define SBITX_DE (0)
 #define SBITX_V2 (1)
+#define SBITX_V4 (4)
 
-int sbitx_version = SBITX_V2;
+int sbitx_version = -1;
 int fwdpower, vswr;
 int fwdpower_calc;
 int fwdpower_cnt;
@@ -70,7 +73,7 @@ void tr_switch(int tx_on);
 // if the Wisdom plans in the file were generated at the same or more rigorous level.
 #define WISDOM_MODE FFTW_MEASURE
 #define PLANTIME -1 // spend no more than plantime seconds finding the best FFT algorithm. -1 turns the platime cap off.
-char wisdom_file[] = "sbitx_wisdom.wis";
+char wisdom_file[] = "/home/pi/sbitx/data/sbitx_wisdom.wis";
 
 #define NOISE_ALPHA 0.9	   // Smoothing factor for DSP noise estimation 0.0->1.0 >responsive/>stable -> >responsive/>stable
 #define SIGNAL_ALPHA 0.90  // Smoothing factor for DSP observed power spectrum estimation 0.9->0.99 >responsive/>stable -> >responsive/>stable
@@ -83,6 +86,7 @@ fftw_plan plan_fwd, plan_tx;
 int bfo_freq = 40035000;
 int bfo_freq_runtime_offset = 0; // Runtime bfo offset
 int freq_hdr = -1;
+int si570_xtal = 0;
 
 static double volume = 100.0;
 static int tx_drive = 40;
@@ -103,7 +107,7 @@ static double alc_level = 1.0;
 static int tr_relay = 0;
 static int rx_pitch = 700; // used only to offset the lo for CW,CWR
 static int bridge_compensation = 100;
-static double voice_clip_level = 0.04;
+static double voice_clip_level = 0.1;
 static int in_calibration = 1; // this turns off alc, clipping et al
 static double ssb_val = 1.0;   // W9JES
 int dsp_enabled = 0;		   // dsp W2JON
@@ -396,15 +400,14 @@ void apply_fixed_compression(float *input, int num_samples, int compression_cont
 	}
 }
 
-// S-Meter test W2JON
-int calculate_s_meter(struct rx *r, double rx_gain)
+int calculate_s_meter()
 {
 	double signal_strength = 0.0;
 
 	// Summing up the magnitudes of the FFT output bins
 	for (int i = 0; i < MAX_BINS / 2; i++)
 	{
-		double magnitude = cabs(r->fft_time[i]); // Magnitude of complex FFT output in time domain
+		double magnitude = cabs(rx_list->fft_time[i]); // Magnitude of complex FFT output in time domain
 		signal_strength += magnitude;
 	}
 
@@ -605,6 +608,8 @@ void set_lpf_40mhz(int frequency)
 		lpf = LPF_D;
 	else if (frequency < 10500000)
 		lpf = LPF_C;
+	else if (frequency < 21500000 && sbitx_version >= 4)
+		lpf = LPF_B;
 	else if (frequency < 18500000)
 		lpf = LPF_B;
 	else if (frequency < 30000000)
@@ -626,6 +631,7 @@ void set_lpf_40mhz(int frequency)
 	digitalWrite(LPF_B, LOW);
 	digitalWrite(LPF_C, LOW);
 	digitalWrite(LPF_D, LOW);
+	digitalWrite(LPF_E, LOW);
 
 #if DEBUG > 0
 	printf("################ setting %d high\n", lpf);
@@ -640,7 +646,8 @@ void set_rx1(int frequency)
 		return;
 	radio_tune_to(frequency);
 	freq_hdr = frequency;
-	set_lpf_40mhz(frequency);
+	if (sbitx_version < 4)
+		set_lpf_40mhz(frequency);
 }
 
 void set_volume(double v)
@@ -1055,8 +1062,8 @@ int calculate_zero_beat(struct rx *r, double sampling_rate) {
 void rx_linear(int32_t *input_rx, int32_t *input_mic,
 			   int32_t *output_speaker, int32_t *output_tx, int n_samples)
 {
-	int i = 0;
-	double i_sample;
+	int i, j = 0;
+	double i_sample, q_sample;
 
 	// STEP 1: First add the previous M samples
 	// memcpy to replace for loop, ffts are 16 bytes
@@ -1065,35 +1072,54 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 	//     fft_in[i] = fft_m[i];
 
 	// STEP 2: Add the new set of samples
+	// m is the index into incoming samples, starting at zero
+	// i is the index into the time samples, picking from
+	// the samples added in the previous step
 	int m = 0;
+	// gather the samples into a time domain array
 	for (i = MAX_BINS / 2; i < MAX_BINS; i++)
 	{
-		i_sample = (1.0 * input_rx[m]) / 200000000.0;
+		i_sample = (1.0 * input_rx[j]) / 200000000.0;
+		q_sample = 0;
+
+		j++;
+
 		__real__ fft_m[m] = i_sample;
-		__imag__ fft_m[m] = 0;
+		__imag__ fft_m[m] = q_sample;
+
 		__real__ fft_in[i] = i_sample;
-		__imag__ fft_in[i] = 0;
+		__imag__ fft_in[i] = q_sample;
 		m++;
 	}
 
-	// STEP 3: Convert to frequency domain
+	// STEP 3: Convert the time domain samples to frequency domain
 	my_fftw_execute(plan_fwd);
 
 	// STEP 3B: Spectrum update for user interface
+	//  I discovered that the raw time samples give horrible spectrum
+	//  and they need to be multiplied with a window function
+	//  they use a separate fft plan
+	//  NOTE: the spectrum update has nothing to do with the actual
+	//  signal processing. If you are not showing the spectrum or the
+	//  waterfall, you can skip these steps
 	for (i = 0; i < MAX_BINS; i++)
 		__real__ fft_in[i] *= spectrum_window[i];
 	my_fftw_execute(plan_spectrum);
 	spectrum_update();
 
-	// STEP 4: Rotate the bins around by r->tuned_bin
+	// ... back to the actual processing, after spectrum update
+
+	// we may add another sub receiver within the pass band later,
+	// hence, the linked list of receivers here
+	// at present, we handle just the first receiver
 	struct rx *r = rx_list;
+
+	// STEP 4: Rotate the bins around by r-tuned_bin
 	int shift = r->tuned_bin;
 	if (r->mode == MODE_AM)
 		shift = 0;
-	int b = 0;
-	for (i = 0; i < MAX_BINS; i++)
-	{
-		b = i + shift;
+	for (i = 0; i < MAX_BINS; i++) {
+		int b = i + shift;
 		if (b >= MAX_BINS)
 			b -= MAX_BINS;
 		if (b < 0)
@@ -1325,9 +1351,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 
 	// STEP 6: Apply the FIR filter
 	for (i = 0; i < MAX_BINS; i++)
-	{
 		r->fft_freq[i] *= r->filter->fir_coeff[i];
-	}
 
 	// STEP 7: Convert back to time domain
 	my_fftw_execute(r->plan_rev);
@@ -1336,9 +1360,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 	agc2(r);
 
 	// STEP 9: Send the output
-	// int is_digital = 0;
-	if (rx_list->output == 0)
-	{
+	if (rx_list->output == 0) {
 		if (r->mode == MODE_AM)
 		{
 			for (i = 0; i < MAX_BINS / 2; i++)
@@ -1347,23 +1369,19 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 				output_speaker[i] = sample;
 				output_tx[i] = 0;
 			}
-		}
-		else
-		{
-			int32_t sample;
+		} else {
 			for (i = 0; i < MAX_BINS / 2; i++)
 			{
-				sample = cimag(r->fft_time[i + (MAX_BINS / 2)]);
+				int32_t sample = cimag(r->fft_time[i+(MAX_BINS/2)]);
+				// keep transmit buffer empty
 				output_speaker[i] = sample;
 				output_tx[i] = 0;
 			}
 		}
 
 		// Push the samples to the remote audio queue, decimated to 16000 samples/sec
-		//for (i = 0; i < MAX_BINS / 2; i += 6)
-		//{
-		//	q_write(&qremote, output_speaker[i]);
-		//}
+		for (i = 0; i < MAX_BINS / 2; i += 6)
+			q_write(&qremote, output_speaker[i]);
 	}
 
 	if (mute_count)
@@ -1392,9 +1410,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 
 				// Apply smooth limiting if sample exceeds threshold
 				if (fabs(sample) > limiter_threshold)
-				{
 					sample = limiter_threshold * tanh(sample / limiter_threshold);
-				}
 
 				output_speaker[i] = (int32_t)sample;
 			}
@@ -1419,7 +1435,6 @@ void read_power()
 
 	memcpy(&vfwd, response, 2);
 	memcpy(&vref, response + 2, 2);
-	//	printf("%d:%d\n", vfwd, vref);
 
 	// Very low power readings may spoil the swr calculation, especially in CW modes between symbols
 	// Better not to calculate the swr at all if the measured power is under a very minimal level
@@ -1433,7 +1448,6 @@ void read_power()
 	// here '400' is the scaling factor as our ref power output is 40 watts
 	// this calculates the power as 1/10th of a watt, 400 = 40 watts
 	int fwdvoltage = (vfwd * 40) / bridge_compensation;
-
 	// Implement a simple "hold" algorithm in order to show
 	// readable and meaningful power readings that should be the pep power
 	fwdpw = (fwdvoltage * fwdvoltage) / 400;
@@ -1481,6 +1495,9 @@ void tx_process(
 		// Get upsampled browser mic audio
 		upsample_browser_mic(browser_mic_samples, n_samples);
 	}
+
+	if (pf_debug)
+		fwrite(input_mic, sizeof(int32_t), n_samples, pf_debug);
 
 	struct rx *r = tx_list;
 
@@ -1570,7 +1587,6 @@ void tx_process(
 	// gather the samples into a time domain array
 	for (i = MAX_BINS / 2; i < MAX_BINS; i++)
 	{
-
 		if (r->mode == MODE_2TONE)
 			i_sample = (1.0 * (vfo_read(&tone_a) + vfo_read(&tone_b))) / 50000000000.0;
 		else if (r->mode == MODE_CALIBRATE)
@@ -1710,15 +1726,17 @@ void tx_process(
 	{
 		double s = creal(r->fft_time[i + (MAX_BINS / 2)]);
 		output_tx[i] = s * scale * tx_amp * alc_level;
-		if (min > output_tx[i])
+/*		if (min > output_tx[i])
 			min = output_tx[i];
 		if (max < output_tx[i])
 			max = output_tx[i];
+*/
 		// output_tx[i] = 0;
 	}
 	//	printf("min %d, max %d\n", min, max);
 
-	read_power();
+	if (sbitx_version < 4)
+		read_power();
 
 	// Instead of using sdr_modulation_update, we'll update the spectrum data directly
 	// This allows the TX audio to be displayed in the spectrum and waterfall
@@ -1948,6 +1966,10 @@ static int hw_settings_handler(void *user, const char *section,
 			si5351_set_calibration(atoi(value));
 		}
 	}
+	if (!strcmp(name, "si570_xtal"))
+		si570_xtal = atoi(value);
+	if (!strcmp(name, "hw"))
+		sbitx_version = atoi(value);
 }
 
 static void read_hw_ini()
@@ -2095,18 +2117,87 @@ void tx_cal()
 				   (void *)NULL);
 }
 
+//v4 t/r switch uses separate lines for RX and TX powering
+void tr_switch_v4(int tx_on){
+	if (tx_on){
+
+		digitalWrite(RX_LINE, LOW);
+
+		//first turn off the LPFs, so PA doesnt connect
+		digitalWrite(LPF_A, LOW);
+		digitalWrite(LPF_B, LOW);
+		digitalWrite(LPF_C, LOW);
+		digitalWrite(LPF_D, LOW);
+		digitalWrite(LPF_E, LOW);
+
+		//mute it all and hang on for a millisecond
+		//		sound_mixer(audio_card, "Master", 0);
+		//		sound_mixer(audio_card, "Capture", 0);
+		delay(1);
+
+		//now switch of the signal back
+		//now ramp up after 5 msecs
+		delay(2);
+		mute_count = 20;
+		tx_process_restart = 1;
+		delay(20);
+		in_tx = 1;
+		set_tx_power_levels();
+		prev_lpf = -1; //force this
+		set_lpf_40mhz(freq_hdr);
+		delay(10);
+		spectrum_reset();
+		digitalWrite(TX_LINE, HIGH);
+	} else {
+
+		in_tx = 0;
+		digitalWrite(TX_LINE, LOW);
+
+		// mute it all and hang on
+		sound_mixer(audio_card, "Master", 0);
+		sound_mixer(audio_card, "Capture", 0);
+		delay(1);
+		fft_reset_m_bins();
+		mute_count = MUTE_MAX;
+
+		digitalWrite(LPF_A, LOW);
+		digitalWrite(LPF_B, LOW);
+		digitalWrite(LPF_C, LOW);
+		digitalWrite(LPF_D, LOW);
+		digitalWrite(LPF_E, LOW);
+		prev_lpf = -1; //force the lpf to be re-energized
+		delay(10);
+		// power down the PA chain to null any gain
+		delay(5);
+		// audio codec is back on
+		// Set a level for receiver volume - left channel
+		sound_mixer(audio_card, "Master",  rx_vol);			// Need to change - N3SB
+		sound_mixer(audio_card, "Capture", rx_gain);
+		spectrum_reset();
+		prev_lpf = -1;
+		// set_lpf_40mhz(freq_hdr);
+		// rx_tx_ramp = 10;
+		digitalWrite(RX_LINE, HIGH);
+	}
+}
+
 // tr_switch replaces separate tr_switch_de and tr_switch_v2
 // added and edited comments
 // removed several delay() calls
 // eliminated LPF switching during tr_switch
 // transmit-receive switch for both sbitx DE and V2 and newer
 void tr_switch(int tx_on) {
+	if (sbitx_version == SBITX_V4) {
+		tr_switch_v4(tx_on);
+		return;
+	}
 	if (tx_on) {                   // switch to transmit
 		in_tx = 1;                   // raise a flag so functions see we are in transmit mode
 		sound_mixer(audio_card, "Master", 0);  // mute audio while switching to transmit
 		sound_mixer(audio_card, "Capture", 0);
 		if (rx_list->mode != MODE_CW && rx_list->mode != MODE_CWR)
 			delay(20);
+
 		//mute_count = 20;             // number of audio samples to zero out
 		mute_count = 1;             // number of audio samples to zero out
 		fft_reset_m_bins();          // fixes burst at start of transmission
@@ -2148,8 +2239,9 @@ void tr_switch(int tx_on) {
 /*
 This is the one-time initialization code
 */
-void setup()
+void setup(const char *audio_output_device)
 {
+	printf("Audio Output Device is: %s\n", audio_output_device);
 
 	read_hw_ini();
 
@@ -2157,8 +2249,12 @@ void setup()
 
 	// setup the LPF and the gpio pins
 	pinMode(TX_LINE, OUTPUT);
-	pinMode(TX_POWER, OUTPUT);
-	pinMode(EXT_PTT, OUTPUT); // ADDED BY KF7YDU
+	if (sbitx_version == SBITX_V4) {
+		pinMode(RX_LINE, OUTPUT);
+	} else {
+		pinMode(TX_POWER, OUTPUT);
+		pinMode(EXT_PTT, OUTPUT); // ADDED BY KF7YDU
+	}
 	pinMode(LPF_A, OUTPUT);
 	pinMode(LPF_B, OUTPUT);
 	pinMode(LPF_C, OUTPUT);
@@ -2173,6 +2269,7 @@ void setup()
 
 	digitalWrite(TX_LINE, LOW);
 	digitalWrite(TX_POWER, LOW);
+	digitalWrite(RX_LINE, HIGH);
 
 	fft_init();
 	vfo_init_phase_table();
@@ -2194,12 +2291,15 @@ void setup()
 	tx_list->tuned_bin = 512;
 	tx_init(7000000, MODE_LSB, -3000, -150);
 
-	// detect the version of sbitx
-	uint8_t response[4];
-	if (i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		sbitx_version = SBITX_DE;
-	else
-		sbitx_version = SBITX_V2;
+	// detect the version of sbitx if not read from hw_settings
+	if (sbitx_version == -1){
+		uint8_t response[4];
+		if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
+			sbitx_version = SBITX_DE;
+		else
+			sbitx_version = SBITX_V2;
+	}
+	printf("hw version: %d\n", sbitx_version);
 
 	setup_audio_codec();
 	sound_thread_start("plughw:0,0");
@@ -2237,6 +2337,10 @@ void sdr_request(char *request, char *response)
 		set_rx1(d);
 		// printf("Frequency set to %d\n", freq_hdr);
 		strcpy(response, "ok");
+	}
+	else if (!strcmp(cmd, "smeter"))
+	{
+		sprintf(response, "%d", calculate_s_meter());
 	}
 	else if (!strcmp(cmd, "r1:mode"))
 	{
