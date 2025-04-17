@@ -207,7 +207,7 @@ int ntp_request(const char* ntp_server) {
 	struct tm* utc = gmtime(&txTm);
 
 	char buf[200];
-	snprintf(buf, sizeof(buf), "Network Time: %d-%d-%d %02d:%02d:%02d\n",
+	snprintf(buf, sizeof(buf), "Network Time: %04d-%02d-%02d %02d:%02d:%02d\n",
 			utc->tm_year + 1900, utc->tm_mon + 1, utc->tm_mday,
 	   utc->tm_hour, utc->tm_min, utc->tm_sec);
 
