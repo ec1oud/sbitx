@@ -5995,9 +5995,8 @@ void rtc_write(int year, int month, int day, int hours, int minutes, int seconds
 	*/
 }
 
-// this will copy the computer time
-// to the rtc
-void rtc_sync()
+// copy the computer time to the rtc
+void rtc_update()
 {
 	time_t t = time(NULL);
 	struct tm *t_utc = gmtime(&t);
@@ -6802,6 +6801,21 @@ void zbitx_init()
 	}
 }
 
+int next_sync = 0;
+void try_ntp() {
+	const char* ntp_server = "pool.ntp.org";
+
+	if (next_sync > millis() || next_sync == -1)
+		return;
+
+	if (sync_system_time(ntp_server) == 0) {
+		rtc_update();
+		next_sync = -1;
+	} else {
+		next_sync = millis() + 30000;
+	}
+}
+
 gboolean ui_tick(gpointer gook)
 {
 	int static ticks = 0;
@@ -6923,6 +6937,8 @@ gboolean ui_tick(gpointer gook)
 
 		if (zbitx_available)
 			zbitx_poll(0);
+
+		try_ntp();
 
 		if (in_tx)
 		{
@@ -8214,7 +8230,7 @@ int main(int argc, char *argv[])
 	const char *ntp_server = "pool.ntp.org";
 	sync_system_time(ntp_server);
 	// ---
-	rtc_sync();
+	//rtc_sync();
 
 	struct field *f;
 	f = active_layout;

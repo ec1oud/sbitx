@@ -132,32 +132,36 @@ int ntp_request(const char* ntp_server) {
     return txTm;
 }
 
-void sync_system_time(const char* ntp_server) {
-    time_t current_time;
-    time(&current_time);  // Get current system time
+int sync_system_time(const char* ntp_server) {
+  time_t current_time;
+  time(&current_time);  // Get current system time
 
-    time_t ntp_time = ntp_request(ntp_server);
-    if (ntp_time == -1) {
-        printf("Failed to synchronize system time with NTP server.\n");
-        return;
-    }
+	printf("Syncing time with %s\n", ntp_server);
+  time_t ntp_time = ntp_request(ntp_server);
+  if (ntp_time == -1) {
+    printf("Failed to synchronize system time with NTP server.\n");
+    return - 1;
+  }
 
-    // Check if adjustment is needed (within 1 second difference)
-    if (labs(current_time - ntp_time) > 1) {
-        // Adjust system time
-        struct timeval tv;
-        tv.tv_sec = ntp_time;
-        tv.tv_usec = 0;
+  // Check if adjustment is needed (within 1 second difference)
+  if (labs(current_time - ntp_time) > 1) {
+    // Adjust system time
+    struct timeval tv;
+    tv.tv_sec = ntp_time;
+    tv.tv_usec = 0;
 
-        if (settimeofday(&tv, NULL) < 0) {
-            perror("settimeofday");
-            printf("Failed to adjust system time.\n");
-        }
-        else {
-            printf("System time adjusted to match NTP time.\n");
-        }
+    if (settimeofday(&tv, NULL) < 0) {
+       perror("settimeofday");
+       printf("Failed to adjust system time.\n");
+				return -1;
     }
     else {
-        printf("System time is already within 1 second of NTP time.\n");
+     printf("System time adjusted to match NTP time.\n");
+		return 0;
     }
+  }
+  else {
+    printf("System time is already within 1 second of NTP time.\n");
+		return 0;
+  }
 }
