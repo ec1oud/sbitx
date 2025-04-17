@@ -7110,7 +7110,7 @@ void zbitx_init()
 
 int next_sync = 0; //sets to -1  after a network update
 void try_ntp(){
-	const char* ntp_server = "time.google.com";
+	const char* ntp_server = "pool.ntp.org";
 
 	if (next_sync > millis() || next_sync == -1)
 		return;
@@ -8507,8 +8507,7 @@ int main(int argc, char *argv[])
 	else
 		setup("plughw:0,0");	// otherwise use the default audio output device
 
-	const char* ntp_server = "time.google.com";
-	sync_sbitx_time(ntp_server);
+	sync_sbitx_time("pool.ntp.org");
 
 	struct field *f;
 	f = active_layout;
