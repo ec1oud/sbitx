@@ -3447,7 +3447,7 @@ static void layout_ui()
 	field_move("KBD", screen_width - 47, screen_height - 47, 45, 45);
 
 	// Main radio controls
-	field_move("FREQ", x2 - 205, 0, 180, 40);
+	field_move("FREQ", x2 - 205, 0, 160, 40);
 	field_move("AUDIO", x2 - 45, 5, 40, 40);
 	field_move("IF", x2 - 45, 50, 40, 40);
 	field_move("DRIVE", x2 - 85, 50, 40, 40);
