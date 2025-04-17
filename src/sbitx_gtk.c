@@ -1965,12 +1965,12 @@ static int user_settings_handler(void *user, const char *section,
 			band_stack[band].mode[2] = atoi(value);
 		else if (!strcmp(name, "mode3"))
 			band_stack[band].mode[3] = atoi(value);
-/*		else if (!strcmp(name, "gain"))
+		else if (!strcmp(name, "gain"))
 			band_stack[band].if_gain = atoi(value);
 		else if (!strcmp(name, "drive"))
 			band_stack[band].drive = atoi(value);
 		else if (!strcmp(name, "tnpwr"))
-			band_stack[band].tnpwr = atoi(value);*/
+			band_stack[band].tnpwr = atoi(value);
 	}
 	return 1;
 }
@@ -8252,6 +8252,7 @@ int main(int argc, char *argv[])
 	//	"  &>/dev/null &");
 
 	gtk_main();
+	save_user_settings(1);
 
 	return 0;
 }
