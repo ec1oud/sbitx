@@ -1248,7 +1248,6 @@ void tx_process(
 			i_sample = modem_next_sample(r->mode) / 3;
 		else if (r->mode == MODE_AM)
 		{
-			// double modulation = (1.0 * vfo_read(&tone_a)) / 1073741824.0;
 			double modulation = (1.0 * input_mic[j]) / 200000000.0;
 			if (modulation < -1.0)
 				modulation = -1.0;
@@ -1268,25 +1267,28 @@ void tx_process(
 		}
 
 		// Don't echo the voice modes
-		if (r->mode == MODE_USB || r->mode == MODE_LSB || r->mode == MODE_AM || r->mode == MODE_NBFM)
-		{
-			// Unless of course you want to use the txmon control
-			if (txmon_control_level >= 1 && txmon_control_level <= 10)
-			{
-				output_speaker[j] = i_sample * txmon_control_level * 1000000000.0;
-			}
-			else
-			{
-				output_speaker[j] = 0;
-			}
-			q_sample = 0;
+		switch(r->mode){
+			case MODE_USB:
+			case MODE_LSB:
+			case MODE_AM:
+			case MODE_NBFM:
+				// Unless of course you want to use the txmon control
+				if (txmon_control_level >= 1 && txmon_control_level <= 10)
+					output_speaker[j] = i_sample * txmon_control_level * 1000000000.0;
+				else
+					output_speaker[j] = 0;
+				break;
+			case MODE_CW:
+			case MODE_CWR:
+			case MODE_FT8:
+				output_speaker[j] = (int)(i_sample * 20000000.0) * sidetone;
+				break;
+			case MODE_DIGITAL:
+				output_speaker[j] = input_mic[j] / 1000 * sidetone;
+				break;
 		}
-		else
-		{
-			// If not in voice modes, use the sidetone
-			output_speaker[j] = input_mic[j]/1000 * sidetone;
-			q_sample = 0;
-		}
+
+		q_sample = 0;
 
 		j++;
 
