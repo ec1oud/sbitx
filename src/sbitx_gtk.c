@@ -2563,12 +2563,14 @@ void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
 		cairo_show_text(gfx, label);
 	}
 
-	int b = field_int("VBATT")/10;
-	if (b > 0){
-		char buff[20];
-		sprintf(buff, "Batt %d.%d V", b/10, b %  10);
-		cairo_move_to(gfx, f_spectrum->x + 120, f_spectrum->y+9);
-		cairo_show_text(gfx, buff);
+	if (zbitx_available) {
+		int b = field_int("VBATT") / 10;
+		if (b > 0){
+			char buff[20];
+			sprintf(buff, "Batt %d.%d V", b / 10, b % 10);
+			cairo_move_to(gfx, f_spectrum->x + 120, f_spectrum->y + 9);
+			cairo_show_text(gfx, buff);
+		}
 	}
 }
 
