@@ -7007,7 +7007,7 @@ void zbitx_write(int style, const char *text){
 		printf("*zbitx_write update is oversized\n");
 		return;
 	}
-	snprintf(buffer, sizeof(buffer), "%d %s", style, text);
+	snprintf(buffer, sizeof(buffer), "%d %s", old_style_font(style), text);
 	char *p = buffer;
 	if (q_zbitx_console.overflow)
 		q_empty(&q_zbitx_console);
