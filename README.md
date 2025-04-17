@@ -1,94 +1,40 @@
-# sBitx - 64-Bit Version
+# sBitx / zBitx - K7IHZ / LB2JK version
 ![sBitx image](sbitx44.png)
 
+An improved experimental version of the sBitx application designed for the sBitx and zBitx hardware. 
+https://www.hfsignals.com/
 
-An improved version of the sBitx application designed for the sBitx hardware. This version is only for the 64-bit Raspberry Pi image, which can be downloaded [here](https://github.com/drexjj/sbitx/releases).
+A 64-bit Raspberry Pi image can be downloaded [here](https://github.com/drexjj/sbitx/releases).
+But in fact, this version works on either the 32-bit or 64-bit OS, on either sBitx or zBitx.
 
-## 🚀 Development Team
+I'm mainly using FT8 and other digital modes. I've not learned Morse Code yet, and the
+software decoder doesn't seem to perform very well, so CW mode is not tested much in this fork.
 
-We have an incredible development team collaborating on improvements for the sBitx platform:
+Near-term goals:
+- [x] Fix bugs and make the GTK UI a little more useable
+- [x] Make FT8 handle non-standard callsigns etc.
+- [x] Replace the ad-hoc colored-text markup with plain text and separate spans
+- [ ] Make the zBitx work well enough to do SOTA activations and take on trips
+- [ ] Use 9p protocol to expose the radio as a virtual filesystem (see the 9p branch, for now)
+- [ ] Turn the application into a headless daemon (GTK optional)
+- [ ] Develop 9p client applications: one on Plan 9 and one using Qt Quick
+- [ ] Use 9p over i2c for the zBitx display
+- [ ] FT4?
+- [ ] integrate with Pat? (winlink replacement, which already has good front/backend separation)
+- [ ] Make other modes besides FT8/FT4 work better, somehow
 
-- **JJ - W9JES**
-- **Jon - W2JON**
-- **Alan - N1QM**
-- **Lars - OZ7BX**
-- **Lee - W4WHL**
-- **Mike - KB2ML**
-- **Jeff - KF7YDU**
+The zBitx display is rather small, so I feel the need to use it mostly via some
+sort of remote control; and anyway, the only built-in digital mode that the UI
+supports directly so far is FT8, although it seems there was some vision to
+eventually integrate with fldigi somehow, for the others. I hope that if the
+first part of this project is successful, it will help to follow the same
+pattern with other UIs: write a daemon to run whatever mode, and use 9p as the
+remote-UI protocol. That way it will work over the network too, with minimal
+bandwidth. Then maybe in the portable cases I can still mostly use a tablet
+or laptop connected over wifi, rather than the tiny touchscreen.
 
-A huge thank you to everyone who contributes their time and expertise to this project!
+It already had a web UI, still does...but I don't think I'll work on it much.
 
-## 📂 File Compatibility
-
-The files here are designed to work on the modified, 64-bit version provided in the [Releases](https://github.com/drexjj/sbitx/releases) section.
-
-- **sBitx Toolbox for 64-bit**: [Available Here](https://github.com/drexjj/sBITX-toolbox64)
-- **sBitx Toolbox for 32-bit (Factory HF Signals Version)**: [Available Here](https://github.com/drexjj/sBITX-toolbox)
-
-## 🔴 Backup Your Data First!
-
-Before installing this version, **backup your existing** `sbitx/data` **and** `sbitx/web` **folders** to a safe location. This ensures you don’t lose important data such as your logbook, hardware calibration, and user settings.
-
-### Backup Methods
-
-#### 1️⃣ sBITX EZ Data (Recommended)
-
-A built-in backup utility for both the factory and 64-bit versions of sBitx. This tool copies your critical data files to a USB drive. It can be installed from the sBitx Toolbox.
-
-#### 2️⃣ Manual Backup
-
-Alternatively, you can manually back up your data using the terminal:
-
-```console
-cd $HOME && mv sbitx sbitx_orig
-```
-
-To restore your backup after installation:
-
-```console
-cd $HOME && cp -r sbitx_orig/web/* sbitx/web/ && cp -r sbitx_orig/data/* sbitx/data/
-```
-
-## 🔧 Installation & Upgrades
-
-For detailed installation and upgrade instructions, please visit the [Wiki Page](https://github.com/drexjj/sbitx/wiki/How-to-install-or-upgrade-your-sBitx-application).
-
-## 📥 Download the 64-Bit Image
-
-A preconfigured, downloadable Raspberry Pi 4 image file is available. This image is designed for a **32GB SD card or USB drive** and can be installed using **Balena Etcher** or **Raspberry Pi Imager**.
-
-**Bonus**: The image comes preinstalled with sBITX Toolbox and other useful ham radio tools.
-
-🔗 [**Download the latest version**](https://github.com/drexjj/sbitx/releases)
-
-## 👏 Contributors & Credits
-
-A huge thank you to the contributors who have played a vital role in this project!
-
-### Special Thanks To:
-
-- **Jon - W2JON**
-- **Alan - N1QM**
-- **Lee - W4WHL**
-- **Lars - OZ7BX**
-- **Jeff - KF7DYU**
-- **Mike - KB2ML**
-- **Chris - W0ANM**
-- **Gyula - HA3HZ**
-- **Pete - VK3PYE**
-- **Mike - WD0OM**
-- **Farhan - VU2ESE**
-- **Paul - G0KAO**
-- **Don - KK7OIM**
-- **Fabrizio - F4VUK**
-
-## 🌟 Support the Project
-
-If you find these enhancements valuable or have benefited from using sBitx, consider supporting our work. Every donation, big or small, helps us keep development going.
-
-💖 [**Donate Here**](https://www.paypal.com/donate/?hosted_button_id=SWPB76LVNUHEY) 💖
-
-Can't donate? No worries! Contributing code, documentation, or spreading the word also makes a big impact.
-
-Thank you for your support and belief in this project!
+The FT8/FT4 improvements depend on improving https://github.com/ec1oud/ft8_lib/
+at the same time. That's going on in parallel, in my fork.
 

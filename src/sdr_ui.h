@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define VER_STR "sbitx v4.4+expt" // Thanks to W9JES, W2JON, N1QM, OZ7BX, W4WHL, KB2ML, F4VUK, and KF7YDU
+#define VER_STR "s/zbitx K7IHZ expt"
 
 // maximum sem_count in write_console_semantic()
 #define MAX_CONSOLE_LINE_STYLES 8
