@@ -2544,6 +2544,7 @@ void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
 	}
 
 	// Now we place the labels below the boxes
+	struct font_style *s = set_style(gfx, STYLE_FIELD_VALUE);
 	cairo_set_source_rgb(gfx, 1.0, 1.0, 1.0);				// white
 	cairo_move_to(gfx, start_x, start_y + box_height + 15); // x, y position
 	for (int i = 0; i < 6; i++)
@@ -2566,7 +2567,7 @@ void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
 	if (b > 0){
 		char buff[20];
 		sprintf(buff, "Batt %d.%d V", b/10, b %  10);
-		cairo_move_to(gfx, f_spectrum->x + 120, f_spectrum->y+7);
+		cairo_move_to(gfx, f_spectrum->x + 120, f_spectrum->y+9);
 		cairo_show_text(gfx, buff);
 	}
 }
@@ -2767,7 +2768,6 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx)
 	cairo_stroke(gfx);
 
 	draw_spectrum_grid(f_spectrum, gfx);
-	f = f_spectrum;
 
 	// Display TX meters in the top left corner of the spectrum grid during transmission
 	if (in_tx) {
@@ -3748,7 +3748,7 @@ static void layout_ui()
 
 	x1 = 0;
 	x2 = screen_width;
-	y1 = 100;
+	y1 = 98;
 	y2 = screen_height;
 
 	// Define standard sizes for spectrum
@@ -3816,8 +3816,7 @@ static void layout_ui()
 	{
 	case MODE_FT8:
 		// Place buttons and calculate highest Y position for FT8
-
-		field_move("CONSOLE", 5, y1, 350, y2 - y1 - 55);
+		field_move("CONSOLE", 5, y1, 350, y2 - y1 - 52);
 		field_move("SPECTRUM", 360, y1, x2 - 365, default_spectrum_height);
 		waterfall_height = y2 - y1 - (default_spectrum_height + 105);
 		if (waterfall_height < MIN_WATERFALL_HEIGHT)
