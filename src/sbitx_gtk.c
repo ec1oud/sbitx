@@ -1420,7 +1420,6 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		}
 		char c = *next_char;
 		if (c == '\n' || col >= console_cols) {
-			console_line_spans[0].length = col;
 			console_line_string[col] = 0;
 			console_init_next_line();
 			console_line_string = console_stream[console_current_line].text;
