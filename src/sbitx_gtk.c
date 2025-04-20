@@ -34,6 +34,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include <errno.h>
 #include <wiringPi.h>
 #include <wiringSerial.h>
+#include "sbitx.h"
 #include "sdr.h"
 #include "sound.h"
 #include "sdr_ui.h"
@@ -266,7 +267,6 @@ int console_current_line = 0;
 int console_selected_line = -1;
 char console_selected_callsign[12];
 
-static uint8_t zbitx_available = 0;
 int update_logs = 0;
 #define ZBITX_I2C_ADDRESS 0xa
 void zbitx_init();
@@ -526,6 +526,7 @@ int data_delay = 700;
 int spectrum_span = 48000;
 extern int spectrum_plot[];
 extern int fwdpower, vswr;
+extern sbitx_hw_version_t sbitx_hw_version;
 
 void do_control_action(char *cmd);
 void cmd_exec(char *cmd);
@@ -2409,7 +2410,7 @@ void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
 		cairo_show_text(gfx, label);
 	}
 
-	if (zbitx_available) {
+	if (sbitx_hw_version == SBITX_V4) {
 		int b = field_int("VBATT")/10;
 		if (b > 0){
 			char buff[20];
@@ -6126,31 +6127,6 @@ void key_isr(void){
 	ptt_state = digitalRead(PTT);
 }
 
-void query_swr(){
-	uint8_t response[4];
-	int16_t vfwd, vref;
-	int vswr;
-	char buff[20];
-
-	if (!in_tx)
-		return;
-	if (i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		return;
-
-	vfwd = vref = 0;
-
-	memcpy(&vfwd, response, 2);
-	memcpy(&vref, response + 2, 2);
-	if (vref >= vfwd)
-		vswr = 100;
-	else
-		vswr = (10 * (vfwd + vref)) / (vfwd - vref);
-	sprintf(buff, "%d", (vfwd * 40) / 68);
-	set_field("#fwdpower", buff);
-	sprintf(buff, "%d", vswr);
-	set_field("#vswr", buff);
-}
-
 void oled_toggle_band()
 {
 	unsigned int freq_now = field_int("FREQ");
@@ -6524,7 +6500,7 @@ void handleButton2Press()
 void zbitx_write(int style, const char *text){
 	char buffer[256];
 
-	if (!zbitx_available)
+	if (sbitx_hw_version != SBITX_V4)
 		return;
 
 	if (strlen(text) > sizeof(buffer) - 10){
@@ -6710,7 +6686,7 @@ void zbitx_init()
 
 	if (!e) {
 		printf("zBitx front panel detected\n");
-		zbitx_available = 1;
+		sbitx_hw_version = SBITX_V4;
 
  		e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{',
 		strlen(VER_STR), VER_STR);
@@ -6828,12 +6804,12 @@ gboolean ui_tick(gpointer gook)
 		char response[6], cmd[10];
 		cmd[0] = 1;
 
-		if (zbitx_available)
+		if (sbitx_hw_version == SBITX_V4)
 			zbitx_poll(0);
 
 		try_ntp();
 
-		if (in_tx)
+		if (in_tx && sbitx_hw_version != SBITX_V4)
 		{
 			char buff[10];
 
@@ -8227,8 +8203,9 @@ int main(int argc, char *argv[])
 
 	rtc_read();
 	zbitx_init();
+	printf("hw version: %d\n", sbitx_hw_version);
 
-	if (zbitx_available)
+	if (sbitx_hw_version == SBITX_V4)
 		zbitx_poll(1); // send all the field values
 
 	//switch to maximum priority
@@ -8237,7 +8214,7 @@ int main(int argc, char *argv[])
 	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
 
 	// Configure the INA260
-	if (!zbitx_available)
+	if (sbitx_hw_version != SBITX_V4)
 		configure_ina260();
 
 	initialize_macro_selection();
