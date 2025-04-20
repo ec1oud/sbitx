@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,25 @@ GtkWidget *tree_view = NULL;;
 int logbook_fill(int from_id, int count, const char *query);
 void logbook_refill(const char *query);
 void clear_tree(GtkListStore *list_store);
+
+int logbook_has_power_and_swr() {
+	static int ret = -1;
+	if (ret < 0) {
+		sqlite3_stmt *stmt;
+		if (db == NULL)
+			logbook_open();
+		// https://stackoverflow.com/a/30348775
+		// it might be called sqlite_schema in newer versions
+		sqlite3_prepare_v2(db, "select sql from sqlite_master where name='logbook';", -1, &stmt, NULL);
+		assert(sqlite3_step(stmt) == SQLITE_ROW);
+		assert(sqlite3_column_count(stmt));
+		assert(sqlite3_column_type(stmt, 0) == SQLITE3_TEXT);
+		const char *sql = sqlite3_column_text(stmt, 0); // a CREATE TABLE command
+		ret = (strstr(sql, "tx_power") && strstr(sql, "vswr"));
+		sqlite3_finalize(stmt);
+	}
+	return ret;
+}
 
 /* writes the output to data/result_rows.txt
 	if the from_id is negative, it returns the later 50 records (higher id)
@@ -355,13 +375,22 @@ void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 	sprintf(date_str, "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
 	sprintf(time_str, "%02d%02d", tmp->tm_hour, tmp->tm_min);
 
-	sprintf(statement,
-		"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
-		"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, tx_power, vswr, comments) "
-		"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%d.%d','%d.%d','%s');",
-			log_freq, mode, date_str, time_str, mycallsign,
-			rst_sent, exchange_sent, contact_callsign, rst_recv, exchange_recv,
-			tx_power / 10, tx_power % 10, tx_vswr / 10, tx_vswr % 10, comments);
+	if (logbook_has_power_and_swr()) {
+		sprintf(statement,
+			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
+			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, tx_power, vswr, comments) "
+			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%d.%d','%d.%d','%s');",
+				log_freq, mode, date_str, time_str, mycallsign,
+				rst_sent, exchange_sent, contact_callsign, rst_recv, exchange_recv,
+				tx_power / 10, tx_power % 10, tx_vswr / 10, tx_vswr % 10, comments);
+	} else {
+		sprintf(statement,
+			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
+			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, comments) "
+			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%s');",
+				log_freq, mode, date_str, time_str, mycallsign,
+				rst_sent, exchange_sent, contact_callsign, rst_recv, exchange_recv, comments);
+	}
 
 	if (db == NULL)
 		logbook_open();
@@ -419,7 +448,7 @@ void import_logs(char *filename){
 */
 
 // ADIF field headers, see note above
-const static char *adif_names[]={"ID","MODE","FREQ","QSO_DATE","TIME_ON","OPERATOR","RST_SENT","STX_String","CALL","RST_RCVD","SRX_String","STX","TX_PWR","COMMENTS"};
+const static char *adif_names[]={"ID","MODE","FREQ","QSO_DATE","TIME_ON","OPERATOR","RST_SENT","STX_String","CALL","RST_RCVD","SRX_String","STX","COMMENTS","TX_PWR"};
 
 struct band_name {
 	char *name;
@@ -456,10 +485,17 @@ int export_adif(char *path, char *start_date, char *end_date){
 	char statement[250], param[2000], qso_band[20];
 
 	//add to the bottom of the logbook
-	snprintf(statement, 250,
-			"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,tx_power,comments "
-			" from logbook where (qso_date >= '%s' AND qso_date <= '%s') ORDER BY id DESC;",
-			start_date, end_date);
+	if (logbook_has_power_and_swr()) {
+		snprintf(statement, 250,
+				"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments,tx_power "
+				" from logbook where (qso_date >= '%s' AND qso_date <= '%s') ORDER BY id DESC;",
+				start_date, end_date);
+	} else {
+		snprintf(statement, 250,
+				"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments "
+				" from logbook where (qso_date >= '%s' AND qso_date <= '%s') ORDER BY id DESC;",
+				start_date, end_date);
+	}
 
 	FILE *pf = fopen(path, "w");
 	int ret = sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
