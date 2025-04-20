@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <errno.h>
+#include "sbitx.h"
 #include "sdr.h"
 #include "sdr_ui.h"
 #include "sound.h"
@@ -48,11 +49,7 @@ FILE *pf_debug = NULL;
 #define LPF_D 11
 #define LPF_E 26
 
-#define SBITX_DE (0)
-#define SBITX_V2 (1)
-#define SBITX_V4 (4)
-
-int sbitx_version = -1;
+sbitx_hw_version_t sbitx_hw_version = SBITX_UNK;
 int fwdpower, vswr;
 int fwdpower_calc;
 int fwdpower_cnt;
@@ -608,7 +605,7 @@ void set_lpf_40mhz(int frequency)
 		lpf = LPF_D;
 	else if (frequency < 10500000)
 		lpf = LPF_C;
-	else if (frequency < 21500000 && sbitx_version >= 4)
+	else if (frequency < 21500000 && sbitx_hw_version == SBITX_V4)
 		lpf = LPF_B;
 	else if (frequency < 18500000)
 		lpf = LPF_B;
@@ -646,7 +643,7 @@ void set_rx1(int frequency)
 		return;
 	radio_tune_to(frequency);
 	freq_hdr = frequency;
-	if (sbitx_version < 4)
+	if (sbitx_hw_version != SBITX_V4)
 		set_lpf_40mhz(frequency);
 }
 
@@ -1738,7 +1735,7 @@ void tx_process(
 	}
 	//	printf("min %d, max %d\n", min, max);
 
-	if (sbitx_version < 4)
+	if (sbitx_hw_version != SBITX_V4)
 		read_power();
 
 	// Instead of using sdr_modulation_update, we'll update the spectrum data directly
@@ -1972,7 +1969,7 @@ static int hw_settings_handler(void *user, const char *section,
 	if (!strcmp(name, "si570_xtal"))
 		si570_xtal = atoi(value);
 	if (!strcmp(name, "hw"))
-		sbitx_version = atoi(value);
+		sbitx_hw_version = atoi(value);
 }
 
 static void read_hw_ini()
@@ -2190,7 +2187,7 @@ void tr_switch_v4(int tx_on){
 // eliminated LPF switching during tr_switch
 // transmit-receive switch for both sbitx DE and V2 and newer
 void tr_switch(int tx_on) {
-	if (sbitx_version == SBITX_V4) {
+	if (sbitx_hw_version == SBITX_V4) {
 		tr_switch_v4(tx_on);
 		return;
 	}
@@ -2252,7 +2249,7 @@ void setup(const char *audio_output_device)
 
 	// setup the LPF and the gpio pins
 	pinMode(TX_LINE, OUTPUT);
-	if (sbitx_version == SBITX_V4) {
+	if (sbitx_hw_version == SBITX_V4) {
 		pinMode(RX_LINE, OUTPUT);
 	} else {
 		pinMode(TX_POWER, OUTPUT);
@@ -2294,15 +2291,14 @@ void setup(const char *audio_output_device)
 	tx_list->tuned_bin = 512;
 	tx_init(7000000, MODE_LSB, -3000, -150);
 
-	// detect the version of sbitx if not read from hw_settings
-	if (sbitx_version == -1){
+	// detect the hardware version if not read from hw_settings
+	if (sbitx_hw_version == SBITX_UNK) {
 		uint8_t response[4];
 		if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-			sbitx_version = SBITX_DE;
+			sbitx_hw_version = SBITX_DE;
 		else
-			sbitx_version = SBITX_V2;
+			sbitx_hw_version = SBITX_V2;
 	}
-	printf("hw version: %d\n", sbitx_version);
 
 	setup_audio_codec();
 	sound_thread_start("plughw:0,0");
