@@ -1398,7 +1398,7 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		}
 	}
 
-	if (console_popover)
+	if (console_popover && !mouse_down)
 		gtk_popover_popdown(GTK_POPOVER(console_popover));
 
 	const char *next_char = text;
