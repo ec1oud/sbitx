@@ -36,6 +36,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include <errno.h>
 #include <wiringPi.h>
 #include <wiringSerial.h>
+#include "sbitx.h"
 #include "sdr.h"
 #include "sound.h"
 #include "sdr_ui.h"
@@ -263,7 +264,6 @@ static struct console_line console_stream[MAX_CONSOLE_LINES];
 int console_current_line = 0;
 int console_selected_line = -1;
 
-static uint8_t zbitx_available = 0;
 int update_logs = 0;
 #define ZBITX_I2C_ADDRESS 0xa
 void zbitx_init();
@@ -524,6 +524,7 @@ int data_delay = 700;
 int spectrum_span = 48000;
 extern int spectrum_plot[];
 extern int fwdpower, vswr;
+extern sbitx_hw_version_t sbitx_hw_version;
 
 void do_control_action(char *cmd);
 void cmd_exec(char *cmd);
@@ -2354,7 +2355,7 @@ void draw_tx_meters(struct field *f, cairo_t *gfx)
 	sprintf(meter_str, "Power: %d.%d Watts", power / 10, power % 10);
 	draw_text(gfx, f->x + 20, f->y + 5, meter_str, STYLE_FIELD_LABEL);
 	sprintf(meter_str, "VSWR: %d.%d", vswr / 10, vswr % 10);
-	draw_text(gfx, f->x + 135, f->y + 5, meter_str, STYLE_FIELD_LABEL);
+	draw_text(gfx, f->x + 200, f->y + 5, meter_str, STYLE_FIELD_LABEL);
 }
 
 void draw_waterfall(struct field *f, cairo_t *gfx)
@@ -2572,7 +2573,7 @@ void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
 		cairo_show_text(gfx, label);
 	}
 
-	if (zbitx_available) {
+	if (sbitx_hw_version == SBITX_V4) {
 		int b = field_int("VBATT") / 10;
 		if (b > 0){
 			char buff[20];
@@ -6912,7 +6913,7 @@ void handleButton2Press()
 void zbitx_write(int style, const char *text){
 	char buffer[256];
 
-	if (!zbitx_available)
+	if (sbitx_hw_version != SBITX_V4)
 		return;
 
 	if (strlen(text) > sizeof(buffer) - 10){
@@ -7098,7 +7099,7 @@ void zbitx_init()
 
 	if (!e) {
 		printf("zBitx front panel detected\n");
-		zbitx_available = 1;
+		sbitx_hw_version = SBITX_V4;
 
  		e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{',
 		strlen(VER_STR), VER_STR);
@@ -7216,12 +7217,12 @@ gboolean ui_tick(gpointer gook)
 		char response[6], cmd[10];
 		cmd[0] = 1;
 
-		if (zbitx_available)
+		if (sbitx_hw_version == SBITX_V4)
 			zbitx_poll(0);
 
 		try_ntp();
 
-		if (in_tx)
+		if (in_tx && sbitx_hw_version != SBITX_V4)
 		{
 			char buff[10];
 
@@ -8620,9 +8621,10 @@ int main(int argc, char *argv[])
 	remote_start();
 	rtc_read();
 	zbitx_init();
+	printf("hw version: %d\n", sbitx_hw_version);
 
 	printf("BW_CW is %s\n", field_str("BW_CW"));
-	if (zbitx_available)
+	if (sbitx_hw_version == SBITX_V4)
 		zbitx_poll(1); // send all the field values
 
 	//switch to maximum priority
@@ -8631,7 +8633,7 @@ int main(int argc, char *argv[])
 	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
 
 	// Configure the INA260
-	if (!zbitx_available)
+	if (sbitx_hw_version != SBITX_V4)
 		configure_ina260();
 
 	initialize_macro_selection();
