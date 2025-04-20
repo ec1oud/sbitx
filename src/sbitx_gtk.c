@@ -265,6 +265,11 @@ int console_current_line = 0;
 int console_selected_line = -1;
 
 int update_logs = 0;
+
+// last non-zero power and swr, for the log
+int last_fwdpwr = 0;
+int last_swr = 0;
+
 #define ZBITX_I2C_ADDRESS 0xa
 void zbitx_init();
 void zbitx_poll(int all);
@@ -1088,6 +1093,12 @@ int set_field(const char *id, const char *value)
 			v = f->min;
 		if (v > f->max)
 			v = f->max;
+		if (v > 0) {
+			if (!strcmp(id, "#fwdpower"))
+				last_fwdpwr = v;
+			else if (!strcmp(id, "#vswr"))
+				last_swr = v;
+		}
 		sprintf(f->value, "%d", v);
 	}
 	else if (f->value_type == FIELD_SELECTION || f->value_type == FIELD_TOGGLE)
@@ -1792,21 +1803,19 @@ void enter_qso()
 		printf("Duplicate log entry not accepted for %s within two minutes of last entry of %s.\n", callsign, callsign);
 		return;
 	}
-	const int power = field_int("POWER");
-	const int swr = field_int("REF");
 	logbook_add(get_field("#contact_callsign")->value,
 				get_field("#rst_sent")->value,
 				get_field("#exchange_sent")->value,
 				get_field("#rst_received")->value,
 				get_field("#exchange_received")->value,
-				power,
-				swr,
+				last_fwdpwr,
+				last_swr,
 				get_field("#text_in")->value);
 
 	char buff[100];
 	snprintf(buff, 100, "Logged: %s %s-%s %s-%s pwr %d.%d swr %d.%d\n",
 			field_str("CALL"), field_str("SENT"), field_str("NR"),
-			field_str("RECV"), field_str("EXCH"), power / 10, power % 10, swr / 10, swr % 10);
+			field_str("RECV"), field_str("EXCH"), last_fwdpwr / 10, last_fwdpwr % 10, last_swr / 10, last_swr % 10);
 	write_console(STYLE_LOG, buff);
 	printf(buff);
 	update_logs = 1;
