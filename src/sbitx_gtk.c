@@ -1552,6 +1552,11 @@ void draw_console(cairo_t *gfx, struct field *f)
 			//~ printf("   nabbed text '%s' to right of %d,  len %d; end @ %d px\n", buf, col, wlen, col, x);
 		}
 
+		/* debug: draw line numbers
+		sprintf(buf, "%3d", line->spans[0].start_row);
+		draw_text(gfx, f->x + 328, y, buf, default_sem);
+		*/
+
 		start_line++;
 		y += line_height;
 		if (start_line >= MAX_CONSOLE_LINES)
