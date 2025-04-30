@@ -46,6 +46,8 @@ typedef struct FidAux FidAux;
 static int size_read(const Devfile *df);
 static int read_field(const Devfile *df, char *out, int len, int offset);
 static void write_field(const char *name, const char *val, int len, int offset);
+//~ static void stat_field_meta(IxpStat *s, const Devfile *df, int data_index);
+static int read_field_meta(const Devfile *df, char *out, int len, int offset);
 static void stat_text(IxpStat *s, const Devfile *df, int data_index);
 static int read_text(const Devfile *df, char *out, int len, int offset);
 static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index);
@@ -98,11 +100,17 @@ typedef enum {
 
 typedef enum {
 	QID_CH_FREQ = 1,
-	QID_CH_IF_GAIN = 2,
-	QID_CH_RECEIVED = 3,
-	QID_CH_RECEIVED_META = 4,
-	QID_CH_RECEIVED_SPANS = 5,
-	QID_CH_SENT = 6,
+	QID_CH_FREQ_META,
+	QID_CH_FREQ_LABEL,
+	QID_CH_FREQ_FMT,
+	QID_CH_FREQ_MIN,
+	QID_CH_FREQ_MAX,
+	QID_CH_FREQ_STEP,
+	QID_CH_IF_GAIN,
+	QID_CH_RECEIVED,
+	QID_CH_RECEIVED_META,
+	QID_CH_RECEIVED_SPANS,
+	QID_CH_SENT,
 	QID_MASK = 0xFF
 } ChannelDevfileID;
 
@@ -135,6 +143,18 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ, "frequency", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_META, "frequency.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
@@ -183,6 +203,30 @@ static int read_field(const Devfile *df, char *out, int len, int offset) {
 static void write_field(const char *name, const char *val, int len, int offset) {
 	debug("write_field %s: '%s' %d %d\n", name, val, len, offset);
 	set_field(name, val);
+}
+
+static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
+	int min, max, step;
+	int r = get_field_meta(df->read_name, &min, &max, &step);
+	debug("read_field_meta '%s' 0x%x '%s' len %d offset %d; field min %d max %d step %d\n",
+		df->name, df->id, df->read_name, len, offset, min, max, step);
+	if (offset == 0) {
+		switch (df->id & QID_MASK) {
+			case QID_CH_FREQ_LABEL:
+				return snprintf(out, len, "Frequency");
+			case QID_CH_FREQ_FMT:
+				return snprintf(out, len, "%%.0f");
+			case QID_CH_FREQ_MIN:
+				return snprintf(out, len, "%d", min);
+			case QID_CH_FREQ_MAX:
+				return snprintf(out, len, "%d", max);
+			case QID_CH_FREQ_STEP:
+				step = field_int("STEP");
+				debug("   special for freq step: %d\n", step);
+				return snprintf(out, len, "%d", step);
+		}
+	}
+	return 0;
 }
 
 static void update_console_mtimes_and_sizes(time_t mtime);

@@ -1180,7 +1180,11 @@ int field_int(char *label)
 	struct field *f = get_field_by_label(label);
 	if (f)
 	{
-		return atoi(f->value);
+		int ret = atoi(f->value);
+		int len = strlen(f->value);
+		if (len && !strcmp(label, "STEP") && f->value[len - 1] == 'K')
+			ret *= 1000;
+		return ret;
 	}
 	else
 	{
@@ -1205,6 +1209,19 @@ int get_field_value(const char *cmd, char *value)
 		return -1;
 	strcpy(value, f->value);
 	return 0;
+}
+
+int get_field_meta(const char *cmd, int *min, int *max, int *step)
+{
+	struct field *f = get_field(cmd);
+	if (!f)
+		return -1;
+	if (min)
+		*min = f->min;
+	if (max)
+		*max = f->max;
+	if (step)
+		*step = f->step;
 }
 
 int get_field_value_by_label(const char *label, char *value)
