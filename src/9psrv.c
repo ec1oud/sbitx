@@ -686,7 +686,7 @@ void *run_9p(void *arg) {
 					printf("start_9p: getnameinfo() failed: %s\n", gai_strerror(s));
 					return nil;
 				}
-				sprintf(listen_addr, "tcp!%s!1564", host);
+				sprintf(listen_addr, "tcp!%s!564", host);
 				printf("start_9p found %s: %s; will listen on %s\n",ifa->ifa_name, host, listen_addr);
 				break;
 			}

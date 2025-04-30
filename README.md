@@ -7,14 +7,27 @@ An improved version of the sBitx application designed for the
 and hopefully later on, the zBitx.
 
 This fork by K7IHZ / LB2JK is an experiment to turn the sbitx into a 9p virtual
-file server. It listens on TCP port 1564. You can mount it on Linux with a 9p
+file server. It listens on TCP port 564. You can mount it on Linux with a 9p
 client such as 9pfs:
 
-  $ 9pfs sbitx.local -p 1564 /mnt/sbitx
+  $ 9pfs sbitx.local -p 564 /mnt/sbitx
 
 or Plan 9:
 
-  cpu> 9fs tcp!192.168.x.x!1564 /n/sbitx
+  cpu% 9fs tcp!192.168.x.x!564 /n/sbitx
+
+or if you add an ndb entry for the IP address, simply:
+
+  cpu% 9fs sbitx
+
+To get permission for the sbitx binary to listen on port 564 (the standard port
+for 9p) you need to add the capability on the sbitx Linux installation:
+
+```
+$ sudo setcap CAP_NET_BIND_SERVICE=+eip /home/pi/prj/sbitx/sbitx
+```
+
+and then the port can be omitted on the client side (9pfs or 9fs).
 
 What you will see then is a hierarchy of virtual files: you can read all of
 them, and write to some of them to set your callsign, grid, frequency etc.

@@ -15,6 +15,7 @@ STRIP = strip
 
 $(TARGET): $(OBJECTS) ft8_lib/libft8.a
 	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(FFTOBJ) $(LIBPATH) $(LIBS)
+	sudo setcap CAP_NET_BIND_SERVICE=+eip $(TARGET)
 
 .c.o: $(HEADERS)
 	$(CC) -c $(CFLAGS) $(DEBUGFLAGS) $(INCPATH) -o $@ $<
