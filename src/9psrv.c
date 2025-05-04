@@ -413,11 +413,11 @@ static FidAux *findfidaux(void *srvaux, FidAux *start_from) {
 	return nil;
 }
 
-static Devfile *find_file(const char *name) {
+static Devfile *find_file(const char *name, int start_from_idx) {
 	if (!strcmp(name, "/"))
 		return devfiles;
 
-	for (int i = 1; i < devfiles_count; ++i) {
+	for (int i = start_from_idx; i < devfiles_count; ++i) {
 		if (!strcmp(name, devfiles[i].name))
 			return &devfiles[i];
 	}
@@ -478,7 +478,7 @@ void fs_walk(Ixp9Req *r) {
 	debug("fs_walk(%p %d) srv-aux %p %p from %s\n", f, r->fid->fid, r->srv->aux, f->file, f->file->name);
 	name[0] = 0;
 
-	Devfile *df = find_file(f->file->name);
+	Devfile *df = find_file(f->file->name, 1);
 	if (!df)
 		ixp_respond(r, Enofile);
 	debug("   found starting qid 0x%d mode 0x%x %s\n", df->id, df->mode, df->name);
@@ -489,7 +489,7 @@ void fs_walk(Ixp9Req *r) {
 		if (subname[0] != '/')
 			strcat(name, "/");
 		strcat(name, subname);
-		df = find_file(subname);
+		df = find_file(subname, df - devfiles);
 		if (df) {
 			debug("   sub %s (path %s): found %s ID %d mode 0x%x\n",
 				subname, name, df->name, df->id, df->mode);
