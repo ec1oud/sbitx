@@ -107,6 +107,12 @@ typedef enum {
 	QID_CH_FREQ_MAX,
 	QID_CH_FREQ_STEP,
 	QID_CH_IF_GAIN,
+	QID_CH_IF_GAIN_META,
+	QID_CH_IF_GAIN_LABEL,
+	QID_CH_IF_GAIN_FMT,
+	QID_CH_IF_GAIN_MIN,
+	QID_CH_IF_GAIN_MAX,
+	QID_CH_IF_GAIN_STEP,
 	QID_CH_RECEIVED,
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
@@ -141,6 +147,7 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1, "1", QID_MODES_FT8, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ, "frequency", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_META, "frequency.meta", QID_FT8_CHANNEL1, SEM_NONE,
@@ -155,8 +162,22 @@ static Devfile devfiles[] = {
 		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
+
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META, "if_gain.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0666, 0, 0, 0 },
+
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
 		STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META, "received.meta", QID_FT8_CHANNEL1,
@@ -223,6 +244,17 @@ static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
 			case QID_CH_FREQ_STEP:
 				step = field_int("STEP");
 				debug("   special for freq step: %d\n", step);
+				return snprintf(out, len, "%d", step);
+
+			case QID_CH_IF_GAIN_LABEL:
+				return snprintf(out, len, "IF");
+			case QID_CH_IF_GAIN_FMT:
+				return snprintf(out, len, "%%.0f");
+			case QID_CH_IF_GAIN_MIN:
+				return snprintf(out, len, "%d", min);
+			case QID_CH_IF_GAIN_MAX:
+				return snprintf(out, len, "%d", max);
+			case QID_CH_IF_GAIN_STEP:
 				return snprintf(out, len, "%d", step);
 		}
 	}
