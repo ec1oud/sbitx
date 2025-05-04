@@ -9,12 +9,6 @@ have the experience with Arduino programming.
 	wget https://project-downloads.drogon.net/wiringpi-latest.deb
 	sudo dpkg -i wiringpi-latest.deb
 
-##Step 2: INSTALL ncurses
-
-From the command line terminal, run:
-
-	sudo apt-get install ncurses-dev
-
 ##Step 3: INSTALLING FFTW3
 
 We use the excellent FFTW3 library to do all our Fourier Transforms, this library is central
