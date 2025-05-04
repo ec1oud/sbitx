@@ -38,6 +38,7 @@
 
 #include <ixp_local.h>
 
+#include "modem_ft8.h"
 #include "sdr_ui.h"
 
 /* Forward declarations */
@@ -76,6 +77,7 @@ struct FidAux {
 	int data_index; // for the console: console_last_line() at the time the spans were opened (clients: please open spans first!)
 	void *srvaux; // client_id from the attach call
 	Devfile *file;
+	// TODO mode_t omode;
 };
 
 /* Error Messages */
@@ -117,6 +119,7 @@ typedef enum {
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
 	QID_CH_SENT,
+	QID_CH_SEND,
 	QID_MASK = 0xFF
 } ChannelDevfileID;
 
@@ -133,6 +136,8 @@ static Devfile devfiles[] = {
 		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
 		stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
+	// TODO audio, power, swr, s, waterfall
+
 	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	//~ { QID_MODES_SSB, "ssb", QID_MODES,
@@ -162,6 +167,7 @@ static Devfile devfiles[] = {
 		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
+	// TODO drive, pitch, tx1st; separate QSO fields and ctl file to transmit?
 
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
@@ -186,6 +192,8 @@ static Devfile devfiles[] = {
 		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
 		STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SEND, "send", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "#text_in", write_field, "#text_in", DMEXCL|0666, 0, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
@@ -645,9 +653,9 @@ void fs_write(Ixp9Req *r) {
 	char *end = stpncpy(buf, r->ifcall.twrite.data, r->ifcall.twrite.count);
 	*end = 0;
 	char *trimmed = trimwhitespace(buf);
-	debug("fs_write(%p) %s: '%s' %d %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	debug("fs_write(%p) %s: '%s' count %d offset %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
 	f->file->dowrite(f->file->write_name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
-	r->ofcall.rwrite.count = r->ifcall.twrite.count;
+	f->offset = r->ofcall.rwrite.count = r->ifcall.twrite.count;
 	ixp_respond(r, nil);
 }
 
@@ -678,7 +686,7 @@ void fs_open(Ixp9Req *r) {
 			data_index = console_last_line();
 		f->data_index = data_index;
 	}
-	debug("fs_open '%s' fd %d aux %p srv-aux %p; console last line %d\n", f->file->name, f->fd, r->aux, r->srv->aux, data_index);
+	debug("fs_open '%s' mode 0x%x fd %d aux %p srv-aux %p\n", f->file->name, r->fid->omode, f->fd, r->aux, r->srv->aux);
 
 	/*
 	if (f->file->mode & P9_DMDIR) {
@@ -713,7 +721,21 @@ void fs_clunk(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_clunk(%p) fd %d file %p\n", f, f->fd, f->file);
+	debug("fs_clunk '%s' fd %d mode 0x%x offset %d file %p\n", f->file->name, f->fd, r->fid->omode, f->offset, f->file);
+	if (f->file->id == QID_FT8_CHANNEL1 + QID_CH_SEND && (r->fid->omode & P9_OWRITE)) {
+		if (f->offset > 1) {
+			char text[64];
+			int r = read_field(f->file, text, sizeof(text), 0);
+			if (r > 1) {
+				int pitch = field_int("TX_PITCH");
+				debug("--- send %d '%s' pitch %d\n", r, text, pitch);
+				ft8_tx(text, pitch);
+			}
+		} else {
+			set_field(f->file->write_name, "");
+			ft8_abort();
+		}
+	}
 	f->fd = -1;
 	ixp_respond(r, nil);
 }
