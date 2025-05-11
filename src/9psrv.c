@@ -49,6 +49,8 @@ static int read_field(const Devfile *df, char *out, int len, int offset);
 static void write_field(const char *name, const char *val, int len, int offset);
 //~ static void stat_field_meta(IxpStat *s, const Devfile *df, int data_index);
 static int read_field_meta(const Devfile *df, char *out, int len, int offset);
+static void stat_raw(IxpStat *s, const Devfile *df, int data_index);
+static int read_raw(const Devfile *df, char *out, int len, int offset);
 static void stat_text(IxpStat *s, const Devfile *df, int data_index);
 static int read_text(const Devfile *df, char *out, int len, int offset);
 static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index);
@@ -93,6 +95,10 @@ typedef enum {
 	QID_SETTINGS_CALL = 2,
 	QID_SETTINGS_GRID = 3,
 	QID_TEXT = 0x10, // whole console
+	QID_WATERFALL,
+	QID_WATERFALL_META,
+	QID_WATERFALL_WIDTH,
+	QID_WATERFALL_DEPTH,
 	QID_MODES = 0x100,
 	QID_MODES_SSB = 0x101,
 	QID_MODES_FT8 = 0x102,
@@ -136,7 +142,12 @@ static Devfile devfiles[] = {
 		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
 		stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
-	// TODO audio, power, swr, s, waterfall
+	{ QID_WATERFALL, "waterfall", QID_ROOT, SEM_NONE,
+		stat_raw, read_raw, "waterfall", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_WATERFALL_META, "waterfall.meta", QID_ROOT, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	// TODO waterfall metadata
+	// TODO audio, power, swr, s
 
 	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
@@ -299,6 +310,36 @@ static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
 static int read_text(const Devfile *df, char *out, int len, int offset) {
 	//~ debug("read_text '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text(out, len, offset, df->semantic_filter);
+}
+
+static void stat_raw(IxpStat *s, const Devfile *df, int data_index) {
+	s->type = 0;
+	s->dev = 0;
+	s->qid.type = 0;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = df->version;
+	s->mode = df->mode;
+	s->mtime = df->atime; // assume it's different data every time
+	s->atime = df->atime;
+	s->length = MAX_BINS / 2; // AKA sizeof(wf) / sizeof(int)
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+}
+
+static int read_raw(const Devfile *df, char *out, int len, int offset) {
+	debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	static uint8_t data[MAX_BINS / 2];
+	if (df->id == QID_WATERFALL) {
+		if (offset == 0)
+			get_waterfall_8bit_line((uint8_t *)data, MAX_BINS / 2);
+		const int toread = MIN(len, sizeof(data) - offset);
+		memcpy(out, data + offset, toread);
+		return toread;
+	}
+	printf("warning: unknown raw data source '%s'\n", df->name);
+	return 0;
 }
 
 static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {

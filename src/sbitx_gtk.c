@@ -2330,6 +2330,35 @@ void draw_tx_meters(struct field *f, cairo_t *gfx)
 	draw_text(gfx, f->x + 200, f->y + 5, meter_str, STYLE_FIELD_LABEL);
 }
 
+/*!
+	Get the most recent line of 8-bit waterfall intensity values in the range [0, 255].
+	\a max should be (ideally) MAX_BINS / 2.
+*/
+int get_waterfall_8bit_line(uint8_t *buf, int max)
+{
+	const float min_db = (wf_min - 1.0f) * 100.0f;
+	const float max_db = 100.0f * wf_max;
+	const bool autoscope = !strcmp(field_str("AUTOSCOPE"), "ON");
+	max = MIN(max, MAX_BINS / 2);
+	// TODO perhaps resample data to given width, if caller needs it narrower?
+	for (int i = 0; i < max; ++i) {
+		// Scale the input value
+		const float scaled_value = wf[i] * 2.4;
+
+		// Normalize and clamp data to the range [0, 255] based on adjusted min/max
+		 float normalized = 255.0f * (autoscope ?
+			(scaled_value - wf_offset) / (max_db - wf_offset)  :
+			(scaled_value - min_db) / (max_db - min_db) );
+		if (normalized < 0.0f)
+			normalized = 0.0f;
+		else if (normalized > 255.0f)
+			normalized = 255.0f;
+
+		buf[i] = (uint8_t)lroundf(normalized);
+	}
+	return max;
+}
+
 void draw_waterfall(struct field *f, cairo_t *gfx)
 {
 	// Temp local variables.  To be updated by GUI later.

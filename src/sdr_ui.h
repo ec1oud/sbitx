@@ -10,6 +10,10 @@
 
 #define EXT_PTT 26 //ADDED BY KF7YDU, solder lead wire to J17, which ties to pin 32.
 
+#ifndef MAX_BINS
+#define MAX_BINS 2048 // defined authoritatively in sdr.h
+#endif
+
 extern int ext_ptt_enable;
 extern int display_freq;
 extern int spectrum_plot[];
@@ -114,5 +118,6 @@ int macro_exec(int key, char *dest);
 void macro_label(int fn_key, char *label);
 void macro_list(char *output);
 void macro_get_keys(char *output);
+int get_waterfall_8bit_line(uint8_t *buf, int max);
 
 #endif // SDR_UI_H
