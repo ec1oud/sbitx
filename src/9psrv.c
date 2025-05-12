@@ -46,7 +46,7 @@ typedef struct Devfile Devfile;
 typedef struct FidAux FidAux;
 static int size_read(const Devfile *df);
 static int read_field(const Devfile *df, char *out, int len, int offset);
-static void write_field(const char *name, const char *val, int len, int offset);
+static void write_field(const Devfile *df, const char *val, int len, int offset);
 //~ static void stat_field_meta(IxpStat *s, const Devfile *df, int data_index);
 static int read_field_meta(const Devfile *df, char *out, int len, int offset);
 static void stat_raw(IxpStat *s, const Devfile *df, int data_index);
@@ -65,7 +65,7 @@ struct Devfile {
 	void	(*dostat)(IxpStat *s, const Devfile *df, int data_index);
 	int	(*doread)(const Devfile *df, char*, int, int);
 	const char	*read_name;
-	void	(*dowrite)(const char*, const char*, int, int);
+	void	(*dowrite)(const Devfile *df, const char*, int, int);
 	const char	*write_name;
 	mode_t	mode;
 	time_t atime;
@@ -240,9 +240,15 @@ static int read_field(const Devfile *df, char *out, int len, int offset) {
 	return end - out;
 }
 
-static void write_field(const char *name, const char *val, int len, int offset) {
-	debug("write_field %s: '%s' %d %d\n", name, val, len, offset);
-	set_field(name, val);
+static void write_field(const Devfile *df, const char *val, int len, int offset) {
+	debug("write_field %s: '%s' %d %d\n", df->name, val, len, offset);
+	set_field(df->write_name, val);
+	// workaround for lack of multitasking for now:
+	// if the user (re)sets the frequency, set the mode too
+	// TODO maybe add files like modes/ft8/1/focus, modes/ssb/1/focus, etc.
+	if (df->id == QID_FT8_CHANNEL1 + QID_CH_FREQ)
+		set_field("r1:mode", "FT8");
+	// else if SSB... etc.
 }
 
 static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
@@ -695,7 +701,7 @@ void fs_write(Ixp9Req *r) {
 	*end = 0;
 	char *trimmed = trimwhitespace(buf);
 	debug("fs_write(%p) %s: '%s' count %d offset %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
-	f->file->dowrite(f->file->write_name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	f->file->dowrite(f->file, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
 	f->offset = r->ofcall.rwrite.count = r->ifcall.twrite.count;
 	ixp_respond(r, nil);
 }
