@@ -147,6 +147,8 @@ static Devfile devfiles[] = {
 		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_SPECTRUM_META, "spectrum.meta", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_SPECTRUM_SPAN, "span", QID_SPECTRUM_META, SEM_NONE,
+		nil, read_field, "#span", write_field, "#span", DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr, s
 
