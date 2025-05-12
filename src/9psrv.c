@@ -95,10 +95,11 @@ typedef enum {
 	QID_SETTINGS_CALL = 2,
 	QID_SETTINGS_GRID = 3,
 	QID_TEXT = 0x10, // whole console
-	QID_WATERFALL,
-	QID_WATERFALL_META,
-	QID_WATERFALL_WIDTH,
-	QID_WATERFALL_DEPTH,
+	QID_SPECTRUM,
+	QID_SPECTRUM_META,
+	QID_SPECTRUM_SPAN,
+	QID_SPECTRUM_WIDTH,
+	QID_SPECTRUM_DEPTH,
 	QID_MODES = 0x100,
 	QID_MODES_SSB = 0x101,
 	QID_MODES_FT8 = 0x102,
@@ -142,9 +143,9 @@ static Devfile devfiles[] = {
 		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
 		stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ QID_WATERFALL, "waterfall", QID_ROOT, SEM_NONE,
-		stat_raw, read_raw, "waterfall", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ QID_WATERFALL_META, "waterfall.meta", QID_ROOT, SEM_NONE,
+	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
+		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ QID_SPECTRUM_META, "spectrum.meta", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr, s
@@ -335,11 +336,11 @@ static void stat_raw(IxpStat *s, const Devfile *df, int data_index) {
 }
 
 static int read_raw(const Devfile *df, char *out, int len, int offset) {
-	debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	//~ debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	static uint8_t data[MAX_BINS / 2];
-	if (df->id == QID_WATERFALL) {
+	if (df->id == QID_SPECTRUM) {
 		if (offset == 0)
-			get_waterfall_8bit_line((uint8_t *)data, MAX_BINS / 2);
+			get_spectrum_8bit((uint8_t *)data, MAX_BINS / 2);
 		const int toread = MIN(len, sizeof(data) - offset);
 		memcpy(out, data + offset, toread);
 		return toread;
@@ -530,13 +531,13 @@ void fs_walk(Ixp9Req *r) {
 		ixp_respond(r, Enofile);
 		return;
 	}
-	debug("fs_walk(%p %d) srv-aux %p %p from %s\n", f, r->fid->fid, r->srv->aux, f->file, f->file->name);
+	//~ debug("fs_walk(%p %d) srv-aux %p %p from %s\n", f, r->fid->fid, r->srv->aux, f->file, f->file->name);
 	name[0] = 0;
 
 	Devfile *df = find_file(f->file->name, 1);
 	if (!df)
 		ixp_respond(r, Enofile);
-	debug("   found starting qid 0x%d mode 0x%x %s\n", df->id, df->mode, df->name);
+	//~ debug("   found starting qid 0x%d mode 0x%x %s\n", df->id, df->mode, df->name);
 
 	// build full path; populate qid type and ID to return
 	for(i=0; i < r->ifcall.twalk.nwname; i++) {
@@ -546,10 +547,10 @@ void fs_walk(Ixp9Req *r) {
 		strcat(name, subname);
 		df = find_file(subname, df - devfiles);
 		if (df) {
-			debug("   sub %s (path %s): found %s ID %d mode 0x%x\n",
-				subname, name, df->name, df->id, df->mode);
+			//~ debug("   sub %s (path %s): found %s ID %d mode 0x%x\n",
+				//~ subname, name, df->name, df->id, df->mode);
 		} else {
-			debug("   sub %s (path %s): not found\n", subname, name);
+			//~ debug("   sub %s (path %s): not found\n", subname, name);
 			rerrno(r, Enoperm);
 			return;
 		}
@@ -576,7 +577,7 @@ void fs_stat(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_stat(%p) %s\n", r, f->file->name);
+	//~ debug("fs_stat(%p) %s\n", r, f->file->name);
 
 	dostat(&s, f->file, f->data_index);
 	r->fid->qid = s.qid;
@@ -609,7 +610,7 @@ void fs_read(Ixp9Req *r) {
 		buf = ixp_emallocz(size);
 		m = ixp_message(buf, size, MsgPack);
 
-		debug("fs_read fd %d srv-aux %p: dir starting from offset %d in qid 0x%x '%s'; total files %d\n", f->fd, r->srv->aux, f->offset, f->file->id, f->file->name, devfiles_count);
+		//~ debug("fs_read fd %d srv-aux %p: dir starting from offset %d in qid 0x%x '%s'; total files %d\n", f->fd, r->srv->aux, f->offset, f->file->id, f->file->name, devfiles_count);
 
 		/*  for each entry in dir, populate IxpStat s,
 			then use that to append to IxpMsg m
@@ -633,7 +634,7 @@ void fs_read(Ixp9Req *r) {
 		ixp_respond(r, nil);
 		return;
 	} else if (f->file->doread) {
-		debug("fs_read '%s' qid 0x%x: req size %d offset %d\n", f->file->name, f->file->id, r->ifcall.tread.count, r->ifcall.tread.offset);
+		//~ debug("fs_read '%s' qid 0x%x: req size %d offset %d\n", f->file->name, f->file->id, r->ifcall.tread.count, r->ifcall.tread.offset);
 		r->ofcall.rread.data = ixp_emallocz(r->ifcall.tread.count);
 		if (! r->ofcall.rread.data) {
 			ixp_respond(r, nil);
@@ -733,7 +734,7 @@ void fs_open(Ixp9Req *r) {
 			data_index = console_last_line();
 		f->data_index = data_index;
 	}
-	debug("fs_open '%s' mode 0x%x fd %d aux %p srv-aux %p\n", f->file->name, r->fid->omode, f->fd, r->aux, r->srv->aux);
+	//~ debug("fs_open '%s' mode 0x%x fd %d aux %p srv-aux %p\n", f->file->name, r->fid->omode, f->fd, r->aux, r->srv->aux);
 
 	/*
 	if (f->file->mode & P9_DMDIR) {
@@ -758,7 +759,7 @@ void fs_remove(Ixp9Req *r) {
 }
 
 void fs_flush(Ixp9Req *r) {
-	debug("fs_flush: nothing to do\n");
+	//~ debug("fs_flush: nothing to do\n");
 	ixp_respond(r, nil);
 }
 
@@ -768,7 +769,7 @@ void fs_clunk(Ixp9Req *r) {
 		rerrno(r, Ebadfid);
 		return;
 	}
-	debug("fs_clunk '%s' fd %d mode 0x%x offset %d file %p\n", f->file->name, f->fd, r->fid->omode, f->offset, f->file);
+	//~ debug("fs_clunk '%s' fd %d mode 0x%x offset %d file %p\n", f->file->name, f->fd, r->fid->omode, f->offset, f->file);
 	if (f->file->id == QID_FT8_CHANNEL1 + QID_CH_SEND && (r->fid->omode & P9_OWRITE)) {
 		if (f->offset > 1) {
 			char text[64];

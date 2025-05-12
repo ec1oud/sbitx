@@ -118,6 +118,6 @@ int macro_exec(int key, char *dest);
 void macro_label(int fn_key, char *label);
 void macro_list(char *output);
 void macro_get_keys(char *output);
-int get_waterfall_8bit_line(uint8_t *buf, int max);
+int get_spectrum_8bit(uint8_t *buf, int max);
 
 #endif // SDR_UI_H

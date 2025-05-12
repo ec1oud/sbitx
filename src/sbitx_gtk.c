@@ -2334,7 +2334,7 @@ void draw_tx_meters(struct field *f, cairo_t *gfx)
 	Get the most recent line of 8-bit waterfall intensity values in the range [0, 255].
 	\a max should be (ideally) MAX_BINS / 2.
 */
-int get_waterfall_8bit_line(uint8_t *buf, int max)
+int get_spectrum_8bit(uint8_t *buf, int max)
 {
 	const float min_db = (wf_min - 1.0f) * 100.0f;
 	const float max_db = 100.0f * wf_max;
