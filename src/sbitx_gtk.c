@@ -1265,6 +1265,18 @@ int remote_update_field(int i, char *text)
 	return update;
 }
 
+const char *get_field_selections(const char *cmd)
+{
+	struct field *f = get_field(cmd);
+
+	if (!f || (f->value_type != FIELD_SELECTION && f->value_type != FIELD_TOGGLE))
+	{
+		printf("*Error: field[%s] not found, or has no selections.\n", cmd);
+		return "";
+	}
+	return f->selection;
+}
+
 // console is a list view, resembling a terminal with styled text
 void console_init()
 {

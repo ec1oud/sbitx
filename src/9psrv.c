@@ -98,6 +98,8 @@ typedef enum {
 	QID_SPECTRUM,
 	QID_SPECTRUM_META,
 	QID_SPECTRUM_SPAN,
+	QID_SPECTRUM_SPAN_META,
+	QID_SPECTRUM_SPAN_CHOICES,
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
 	QID_MODES = 0x100,
@@ -149,6 +151,10 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN, "span", QID_SPECTRUM_META, SEM_NONE,
 		nil, read_field, "#span", write_field, "#span", DMEXCL|0666, 0, 0, 0 },
+	{ QID_SPECTRUM_SPAN_META, "span.meta", QID_SPECTRUM_META, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_SPECTRUM_SPAN_CHOICES, "choices", QID_SPECTRUM_SPAN_META, SEM_NONE,
+		nil, read_field_meta, "#span", nil, nil, DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr, s
 
@@ -273,6 +279,15 @@ static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
 				step = field_int("STEP");
 				debug("   special for freq step: %d\n", step);
 				return snprintf(out, len, "%d", step);
+			
+			case QID_SPECTRUM_SPAN_CHOICES: {
+				int r = stpncpy(out, get_field_selections(df->read_name), len) - out;
+				// replace slashes with tabs (not sbitx-specific: in general, combobox items could have slashes)
+				for (int i = 0; i < r; ++i)
+					if (out[i] == '/')
+						out[i] = '\t';
+				return r;
+			}
 
 			case QID_CH_IF_GAIN_LABEL:
 				return snprintf(out, len, "IF");
