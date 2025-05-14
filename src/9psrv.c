@@ -41,20 +41,41 @@
 #include "modem_ft8.h"
 #include "sdr_ui.h"
 
+/* Macros */
+// TODO output timestamps
+#define fatal(...) ixp_eprint("fatal: " __VA_ARGS__)
+#define debug(...) if(debuglevel) fprintf(stderr, __VA_ARGS__)
+#define QID(t, i) ((int64_t)(t))
+#ifndef TRUE
+#define TRUE 1
+#define FALSE 0
+#endif
+#define MAX_OPEN_FDS 256
+#define MAX_CLIENTS 256
+#define MAX_EVENTS 64
+#define MAX_FILE_SIZE 1024 // max content size of typical field files (but console data can be bigger)
+#define MAX_PATH_SUFFIX_SIZE 64
+#define FIRST_CLIENT_ID 0xa44a000000000000
+
 /* Forward declarations */
 typedef struct Devfile Devfile;
 typedef struct FidAux FidAux;
-static int size_read(const Devfile *df);
-static int read_field(const Devfile *df, char *out, int len, int offset);
+typedef struct ClientEvents ClientEvents;
+static Devfile *find_by_field_id(const char *read_name);
+static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static int size_read(Ixp9Req *r, const Devfile *df);
+static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static void write_field(const Devfile *df, const char *val, int len, int offset);
-//~ static void stat_field_meta(IxpStat *s, const Devfile *df, int data_index);
-static int read_field_meta(const Devfile *df, char *out, int len, int offset);
-static void stat_raw(IxpStat *s, const Devfile *df, int data_index);
-static int read_raw(const Devfile *df, char *out, int len, int offset);
-static void stat_text(IxpStat *s, const Devfile *df, int data_index);
-static int read_text(const Devfile *df, char *out, int len, int offset);
-static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index);
-static int read_text_spans(const Devfile *df, char *out, int len, int offset);
+//~ static void stat_field_meta(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_field_meta(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void stat_raw(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_raw(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void stat_text(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_text(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void stat_text_spans(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_text_spans(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void update_console_mtimes_and_sizes(time_t mtime);
 
 /* Datatypes */
 struct Devfile {
@@ -62,8 +83,8 @@ struct Devfile {
 	char	*name;
 	int parent;
 	sbitx_style semantic_filter;
-	void	(*dostat)(IxpStat *s, const Devfile *df, int data_index);
-	int	(*doread)(const Devfile *df, char*, int, int);
+	void	(*dostat)(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+	int	(*doread)(Ixp9Req *r, const Devfile *df, char*, int, int);
 	const char	*read_name;
 	void	(*dowrite)(const Devfile *df, const char*, int, int);
 	const char	*write_name;
@@ -82,6 +103,13 @@ struct FidAux {
 	// TODO mode_t omode;
 };
 
+struct ClientEvents {
+	void *srvaux; // client_id from the attach call
+	Devfile *changed[MAX_EVENTS]; // a list of files that have some change to report
+	int count; // how many entries in `changed`
+	int byte_len; // length in bytes of all Devfile->names listed in `changed`
+};
+
 /* Error Messages */
 static char
 	Enoperm[] = "permission denied",
@@ -89,12 +117,19 @@ static char
 	Ebadvalue[] = "bad value",
 	Ebadfid[] = "bad FID";
 
+/* Devfile QIDs */
 typedef enum {
 	QID_ROOT = 0,
-	QID_SETTINGS = 1,
-	QID_SETTINGS_CALL = 2,
-	QID_SETTINGS_GRID = 3,
+	QID_EVENT = 1,
+	
+	QID_SETTINGS = 2,
+	QID_SETTINGS_CALL,
+	QID_SETTINGS_GRID,
+	
 	QID_TEXT = 0x10, // whole console
+	QID_BATTERY,
+	QID_BATT_VOLTAGE,
+	QID_S_METER,
 	QID_SPECTRUM,
 	QID_SPECTRUM_META,
 	QID_SPECTRUM_SPAN,
@@ -102,6 +137,7 @@ typedef enum {
 	QID_SPECTRUM_SPAN_CHOICES,
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
+	
 	QID_MODES = 0x100,
 	QID_MODES_SSB = 0x101,
 	QID_MODES_FT8 = 0x102,
@@ -132,19 +168,40 @@ typedef enum {
 	QID_MASK = 0xFF
 } ChannelDevfileID;
 
+/* Global Vars */
+static IxpServer server;
+static pid_t pid = 0;
+static char *user;
+static int debuglevel = 1;
+static time_t start_time;
+static char *argv0;
+static uint64_t next_client_id = FIRST_CLIENT_ID;
+
 /* Table of all files to be served up */
 #define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
 	{ QID_ROOT, "/", -1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ QID_EVENT, "event", QID_ROOT, SEM_NONE,
+		stat_event, read_event, nil, nil, nil, DMEXCL|0444, 0, 0, 0 },
 	{ QID_SETTINGS, "settings", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_SETTINGS_CALL, "callsign", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_GRID, "grid", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
+		
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
-		stat_text, read_text, "all", nil, "", DMEXCL|0666, 0, 0, 0 },
+		stat_text, read_text, "#console", nil, "", DMEXCL|0666, 0, 0, 0 },
+		
+	{ QID_BATTERY, "battery", QID_ROOT, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+	{ QID_BATT_VOLTAGE, "voltage", QID_BATTERY, SEM_NONE,
+		nil, read_field, "#batt", nil, nil, DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_S_METER, "s", QID_ROOT, SEM_NONE,
+		nil, read_field, "#smeter", nil, nil, DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
 		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_SPECTRUM_META, "spectrum.meta", QID_ROOT, SEM_NONE,
@@ -156,7 +213,7 @@ static Devfile devfiles[] = {
 	{ QID_SPECTRUM_SPAN_CHOICES, "choices", QID_SPECTRUM_SPAN_META, SEM_NONE,
 		nil, read_field_meta, "#span", nil, nil, DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
-	// TODO audio, power, swr, s
+	// TODO audio, power, swr
 
 	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
@@ -217,29 +274,16 @@ static Devfile devfiles[] = {
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
-/* Macros */
-// TODO output timestamps
-#define fatal(...) ixp_eprint("fatal: " __VA_ARGS__)
-#define debug(...) if(debuglevel) fprintf(stderr, __VA_ARGS__)
-#define QID(t, i) ((int64_t)(t))
-#define MAX_OPEN_FDS 256
-#define MAX_FILE_SIZE 1024
+static FidAux open_fds[MAX_OPEN_FDS];
+static ClientEvents client_data[MAX_CLIENTS];
 
-/* Global Vars */
-static IxpServer server;
-static pid_t pid = 0;
-static char *user;
-static int debuglevel = 1;
-static time_t start_time;
-static char *argv0;
-static uint64_t next_client_id = 0xa44a000000000000;
-
-static int size_read(const Devfile *df) {
+/* Functions */
+static int size_read(Ixp9Req *r, const Devfile *df) {
 	char buf[MAX_FILE_SIZE];
-	return df->doread(df, buf, MAX_FILE_SIZE, 0);
+	return df->doread(r, df, buf, MAX_FILE_SIZE, 0);
 }
 
-static int read_field(const Devfile *df, char *out, int len, int offset) {
+static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	char val[64];
 	get_field_value(df->read_name, val); // TODO unsafe: pass sizeof as len
 	int vlen = strlen(val);
@@ -260,7 +304,7 @@ static void write_field(const Devfile *df, const char *val, int len, int offset)
 	// else if SSB... etc.
 }
 
-static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
+static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, int offset) {
 	int min, max, step;
 	int r = get_field_meta(df->read_name, &min, &max, &step);
 	debug("read_field_meta '%s' 0x%x '%s' len %d offset %d; field min %d max %d step %d\n",
@@ -304,9 +348,7 @@ static int read_field_meta(const Devfile *df, char *out, int len, int offset) {
 	return 0;
 }
 
-static void update_console_mtimes_and_sizes(time_t mtime);
-
-static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
+static void stat_text(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
@@ -331,12 +373,12 @@ static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
 	update_console_mtimes_and_sizes(s->mtime);
 }
 
-static int read_text(const Devfile *df, char *out, int len, int offset) {
+static int read_text(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	//~ debug("read_text '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text(out, len, offset, df->semantic_filter);
 }
 
-static void stat_raw(IxpStat *s, const Devfile *df, int data_index) {
+static void stat_raw(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
 	s->type = 0;
 	s->dev = 0;
 	s->qid.type = 0;
@@ -352,7 +394,7 @@ static void stat_raw(IxpStat *s, const Devfile *df, int data_index) {
 	s->muid = user;
 }
 
-static int read_raw(const Devfile *df, char *out, int len, int offset) {
+static int read_raw(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	//~ debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	static uint8_t data[MAX_BINS / 2];
 	if (df->id == QID_SPECTRUM) {
@@ -366,7 +408,7 @@ static int read_raw(const Devfile *df, char *out, int len, int offset) {
 	return 0;
 }
 
-static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {
+static void stat_text_spans(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
 	// expectation of the file server's user: verify that the struct packs as intended
 	assert(sizeof(text_span_semantic) == sizeof(uint64_t));
 	s->type = 0;
@@ -388,7 +430,7 @@ static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {
 		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime, s->qid.version);
 }
 
-static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
+static int read_text_spans(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	//~ debug("read_text_spans '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text_spans((text_span_semantic *)out, len, offset, df->semantic_filter);
 }
@@ -421,8 +463,6 @@ static void update_console_mtimes_and_sizes(time_t mtime) {
 			updated_parents = 1;
 		}
 }
-
-static FidAux open_fds[MAX_OPEN_FDS];
 
 static void fs_open(Ixp9Req *r);
 static void fs_walk(Ixp9Req *r);
@@ -460,6 +500,27 @@ static void usage() {
 
 /* Utility Functions */
 static FidAux* newfidaux(Devfile *df, void *srvaux) {
+	if (df->id == QID_EVENT) {
+		bool notfound = TRUE;
+		// find srvaux in client_data
+		for (int i = 0; i < MAX_CLIENTS && notfound; ++i) {
+			if (client_data[i].srvaux == srvaux) {
+				notfound = FALSE;
+				debug("newfidaux(srv-aux %p): found client_data idx %d for event file\n", srvaux, i);
+			}
+		}
+		if (notfound) {
+			// find an empty slot in client_data
+			for (int i = 0; i < MAX_CLIENTS; ++i) {
+				if (!client_data[i].srvaux) {
+					// TODO memset to clear this entry? nah, do it on detach
+					client_data[i].srvaux = srvaux;
+					debug("newfidaux(srv-aux %p): chose client_data idx %d for event file\n", srvaux, i);
+					break;
+				}
+			}
+		}
+	}
 	// find an empty slot in open_fds
 	for (int i = 0; i < MAX_OPEN_FDS; ++i) {
 		if (!open_fds[i].file) {
@@ -486,6 +547,15 @@ static FidAux *findfidaux(void *srvaux, FidAux *start_from) {
 	return nil;
 }
 
+static ClientEvents *find_client_data(void *srvaux, ClientEvents *start_from) {
+	const int startfrom_idx = start_from ? start_from - client_data : 0;
+	//~ if (start_from) debug("find_client_data: start from %p rather than %p: index %d\n", start_from, client_data, startfrom_idx);
+	for (int i = startfrom_idx; i < MAX_CLIENTS; ++i)
+		if (client_data[i].srvaux == srvaux)
+			return &client_data[i];
+	return nil;
+}
+
 static Devfile *find_file(const char *name, int start_from_idx) {
 	if (!strcmp(name, "/"))
 		return devfiles;
@@ -498,9 +568,90 @@ static Devfile *find_file(const char *name, int start_from_idx) {
 	return nil;
 }
 
-static void dostat(IxpStat *s, const Devfile *df, int index) {
+static Devfile *find_by_field_id(const char *read_name) {
+	if (!read_name || !read_name[0])
+		return nil;
+	for (int f = devfiles_count - 1; f > 0; --f)
+		if (devfiles[f].read_name && !strcmp(devfiles[f].read_name, read_name))
+			return &devfiles[f];
+	return nil;
+}
+
+void notify_field_changed(const char *field_id, const char *old, const char *newval) {
+	if (next_client_id == FIRST_CLIENT_ID)
+		return; // no clients connected, nobody to notify
+	// TODO do this below, after df and connected client are found
+	if (!strncmp(old, newval, 64))
+		return; // no change in value
+	Devfile *df = find_by_field_id(field_id);
+	debug("notify_field_changed: '%s' found 0x%X\n", field_id, df ? df->id : 0);
+	if (df) {
+		for (int i = 0; i < MAX_CLIENTS; ++i)
+			if (client_data[i].srvaux) {
+				bool notfound = TRUE;
+				for (int j = 0; j < MAX_EVENTS && notfound; ++j)
+					if (client_data[i].changed[j] == df)
+						notfound = FALSE;
+				if (notfound) {
+					client_data[i].changed[client_data[i].count++] = df;
+					client_data[i].byte_len += strlen(df->name) + 1;
+				}
+			}
+	}
+}
+
+static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
+	ClientEvents *cd = find_client_data(r->srv->aux, client_data);
+	
+	s->type = 0;
+	s->dev = 0;
+	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	s->qid.type = 0;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = df->version;
+	s->mode = df->mode;
+	s->mtime = console_last_time();
+	s->atime = df->atime;
+	s->length = cd ? cd->byte_len : 0; // add up lengths of all changed filenames
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+	debug("stat_event srv-aux %p len %d mtime %u version %u\n",
+		r->srv->aux, s->length, s->mtime, s->qid.version);
+
+	// side-effect: usually the console has a newer mtime than last time;
+	// so update mtimes on all 'text' files and their parent dirs, recursively.
+	// A better design might be a console callback, but this way seems cheaper for now.
+	update_console_mtimes_and_sizes(s->mtime);
+}
+
+static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
+	ClientEvents *cd = find_client_data(r->srv->aux, client_data);
+	char *end = out;
+	if (cd) {
+		for (int i = 0; i < cd->count; ++i) {
+			assert(cd->changed[i]);
+			if ((end - out) + strlen(cd->changed[i]->name) + 1 > len) {
+				memmove(cd->changed, cd->changed + i, (cd->count - i) * sizeof(Devfile *));
+				cd->count -= i;
+				cd->byte_len -= (end - out);
+				break;
+			}
+			end = stpncpy(end, cd->changed[i]->name, MAX_PATH_SUFFIX_SIZE);
+			*end++ = '\n';
+		}
+		cd->count = 0;
+		cd->byte_len = 0;
+		memset(cd->changed, 0, sizeof(cd->changed));
+	}
+	return end - out;
+}
+
+static void dostat(Ixp9Req *r, IxpStat *s, const Devfile *df, int index) {
 	if (df->dostat) {
-		df->dostat(s, df, index);
+		df->dostat(r, s, df, index);
 		return;
 	}
 
@@ -514,7 +665,7 @@ static void dostat(IxpStat *s, const Devfile *df, int index) {
 	s->mode = df->mode;
 	s->atime = df->atime ? df->atime : start_time;
 	s->mtime = df->mtime ? df->mtime : start_time;
-	s->length = df->doread ? size_read(df) : 0;
+	s->length = df->doread ? size_read(r, df) : 0;
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
@@ -528,10 +679,11 @@ void rerrno(Ixp9Req *r, char *m) {
 }
 
 void fs_attach(Ixp9Req *r) {
-	debug("fs_attach(%p fid %p)\n", r, r->fid);
+	debug("fs_attach(%p fid %p) srv-aux %p\n", r, r->fid, next_client_id);
 	r->fid->qid.type = QTDIR;
 	r->fid->qid.path = (uintptr_t)r->fid;
 	r->fid->aux = newfidaux(devfiles, (void*)next_client_id);
+	// TODO return client_data ptr as srv->aux for this client rather than just using a recognizable fake pointer?
 	r->srv->aux = (void*)next_client_id;
 	r->ofcall.rattach.qid = r->fid->qid;
 	ixp_respond(r, nil);
@@ -596,7 +748,7 @@ void fs_stat(Ixp9Req *r) {
 	}
 	//~ debug("fs_stat(%p) %s\n", r, f->file->name);
 
-	dostat(&s, f->file, f->data_index);
+	dostat(r, &s, f->file, f->data_index);
 	r->fid->qid = s.qid;
 	r->ofcall.rstat.nstat = size = ixp_sizeof_stat(&s);
 	buf = ixp_emallocz(size);
@@ -639,7 +791,7 @@ void fs_read(Ixp9Req *r) {
 //~ debug("skipping '%s' par %d not? %d found_count %d offset %d\n", devfiles[i].name, devfiles[i].parent, f->file->id, found_count, f->offset);
 				continue;
 			}
-			dostat(&s, &devfiles[i], f->data_index);
+			dostat(r, &s, &devfiles[i], f->data_index);
 			offset += ixp_sizeof_stat(&s);
 			ixp_pstat(&m, &s);
 			++found_count;
@@ -657,7 +809,7 @@ void fs_read(Ixp9Req *r) {
 			ixp_respond(r, nil);
 			return;
 		}
-		r->ofcall.rread.count = f->file->doread(f->file, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
+		r->ofcall.rread.count = f->file->doread(r, f->file, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
 		if ((f->file->id & QID_FT8_CHANNEL1) && (f->file->id & QID_MASK) == QID_CH_RECEIVED && f->data_index >= 0) {
 			// unlock / end transaction, in case new data is coming in. The client will find out about that at the next fs_stat().
 			debug("   qid 0x%x: resetting console last line (was %d)\n", f->file->id, f->data_index);
@@ -780,17 +932,17 @@ void fs_flush(Ixp9Req *r) {
 	ixp_respond(r, nil);
 }
 
-void fs_clunk(Ixp9Req *r) {
-	FidAux *f = r->fid->aux;
+void fs_clunk(Ixp9Req *req) {
+	FidAux *f = req->fid->aux;
 	if (!f || !f->file) {
-		rerrno(r, Ebadfid);
+		rerrno(req, Ebadfid);
 		return;
 	}
-	//~ debug("fs_clunk '%s' fd %d mode 0x%x offset %d file %p\n", f->file->name, f->fd, r->fid->omode, f->offset, f->file);
-	if (f->file->id == QID_FT8_CHANNEL1 + QID_CH_SEND && (r->fid->omode & P9_OWRITE)) {
+	debug("fs_clunk '%s' fd %d srv-aux %p mode 0x%x offset %d file %p\n", f->file->name, f->fd, req->srv->aux, req->fid->omode, f->offset, f->file);
+	if (f->file->id == QID_FT8_CHANNEL1 + QID_CH_SEND && (req->fid->omode & P9_OWRITE)) {
 		if (f->offset > 1) {
 			char text[64];
-			int r = read_field(f->file, text, sizeof(text), 0);
+			int r = read_field(req, f->file, text, sizeof(text), 0);
 			if (r > 1) {
 				int pitch = field_int("TX_PITCH");
 				debug("--- send %d '%s' pitch %d\n", r, text, pitch);
@@ -802,7 +954,8 @@ void fs_clunk(Ixp9Req *r) {
 		}
 	}
 	f->fd = -1;
-	ixp_respond(r, nil);
+	// TODO if the FidAux was allocated in fs_attach, free client data at this time (the client detached)
+	ixp_respond(req, nil);
 }
 
 void fs_freefid(IxpFid *f) {
@@ -865,6 +1018,7 @@ void *run_9p(void *arg) {
 	}
 
 	memset(open_fds, 0, sizeof(open_fds));
+	memset(client_data, 0, sizeof(client_data));
 	start_time = time_sbitx();
 
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);

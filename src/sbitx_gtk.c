@@ -1071,6 +1071,8 @@ int set_field(const char *id, const char *value)
 	struct field *f = get_field(id);
 	int v;
 	int debug = 0;
+	char oldval[64];
+	bool changed = FALSE;
 
 	if (!f)
 	{
@@ -1078,6 +1080,8 @@ int set_field(const char *id, const char *value)
 		return 1;
 	}
 
+	strncpy(oldval, f->value, sizeof(oldval));
+	
 	if (f->value_type == FIELD_NUMBER)
 	{
 		int v = atoi(value);
@@ -1154,6 +1158,7 @@ int set_field(const char *id, const char *value)
 	sprintf(buff, "%s %s", f->label, f->value);
 	do_control_action(buff);
 
+	notify_field_changed(id, oldval, f->value);
 	update_field(f);
 	return 0;
 }
@@ -1514,6 +1519,10 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 		f->is_dirty = 1;
 		f->updated_at = millis();
 	}
+	// oldval is empty: we aren't going to repeat the whole console in the notification
+	notify_field_changed("#console", "", text);
+	if (sem[0].semantic == STYLE_FT8_RX)
+		notify_field_changed("ft8_1", "", text);
 }
 
 void draw_console(cairo_t *gfx, struct field *f)
