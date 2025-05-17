@@ -62,6 +62,7 @@ typedef struct Devfile Devfile;
 typedef struct FidAux FidAux;
 typedef struct ClientEvents ClientEvents;
 static Devfile *find_by_field_id(const char *read_name);
+static Devfile *find_by_id(uint64_t id);
 static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
 static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static int size_read(Ixp9Req *r, const Devfile *df);
@@ -81,7 +82,7 @@ static void update_console_mtimes_and_sizes(time_t mtime);
 struct Devfile {
 	uint64_t id; // aka qid.path
 	char	*name;
-	int parent;
+	uint64_t parent; // id; root is 0 and has itself as parent
 	sbitx_style semantic_filter;
 	void	(*dostat)(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
 	int	(*doread)(Ixp9Req *r, const Devfile *df, char*, int, int);
@@ -180,7 +181,7 @@ static uint64_t next_client_id = FIRST_CLIENT_ID;
 /* Table of all files to be served up */
 #define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
-	{ QID_ROOT, "/", -1, SEM_NONE,
+	{ QID_ROOT, "/", 0, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_EVENT, "event", QID_ROOT, SEM_NONE,
 		stat_event, read_event, nil, nil, nil, DMEXCL|0444, 0, 0, 0 },
@@ -211,7 +212,7 @@ static Devfile devfiles[] = {
 	{ QID_SPECTRUM_SPAN_META, "span.meta", QID_SPECTRUM_META, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN_CHOICES, "choices", QID_SPECTRUM_SPAN_META, SEM_NONE,
-		nil, read_field_meta, "#span", nil, nil, DMEXCL|0666, 0, 0, 0 },
+		nil, read_field_meta, "#span-choices", nil, nil, DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr
 
@@ -235,13 +236,13 @@ static Devfile devfiles[] = {
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_META, "frequency.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-label", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-format", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-min", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-max", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
 	// TODO drive, pitch, tx1st; separate QSO fields and ctl file to transmit?
@@ -251,24 +252,24 @@ static Devfile devfiles[] = {
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META, "if_gain.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-label", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-format", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-min", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-max", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain", nil, "", DMEXCL|0666, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", DMEXCL|0666, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
-		STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+		STYLE_FT8_RX, stat_text, read_text, "ft8_1-rcv", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META, "received.meta", QID_FT8_CHANNEL1,
 		STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_SPANS, "spans", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
-		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1-rcv_spans", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
-		STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+		STYLE_FT8_TX, stat_text, read_text, "ft8_1-sent", nil, "", DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SEND, "send", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "#text_in", write_field, "#text_in", DMEXCL|0666, 0, 0, 0 },
 };
@@ -577,15 +578,37 @@ static Devfile *find_by_field_id(const char *read_name) {
 	return nil;
 }
 
+static Devfile *find_by_id(uint64_t id) {
+	for (int f = devfiles_count - 1; f > 0; --f)
+		if (devfiles[f].id == id)
+			return &devfiles[f];
+	return nil;
+}
+
+static int pathcpy_recur(const Devfile *df, char *out, int len) {
+	char *start = out;
+	if (df->parent) {
+		Devfile *parent = find_by_id(df->parent);
+		assert(parent); // df must not point to a non-existent parent
+//~ debug("   parent of %s is %d %s\n", df->name, df->parent, parent->name);
+		out += pathcpy_recur(parent, out, len - strlen(df->name) - 1);
+	}
+	assert(df->name);
+//~ debug("      writing %d bytes '%s' of max %d to %p\n", strlen(df->name), df->name, len, out);
+	out += snprintf(out, len, (start == out ? "%s" : "/%s"), df->name);
+//~ debug("      wrote %d bytes of max %d, ended at %p\n", out - start, len, out);
+	return out - start;
+}
+
 void notify_field_changed(const char *field_id, const char *old, const char *newval) {
 	if (next_client_id == FIRST_CLIENT_ID)
 		return; // no clients connected, nobody to notify
 	// TODO do this below, after df and connected client are found
-	if (!strncmp(old, newval, 64))
+	if (old && !strncmp(old, newval, 64))
 		return; // no change in value
 	Devfile *df = find_by_field_id(field_id);
-	debug("notify_field_changed: '%s' found 0x%X\n", field_id, df ? df->id : 0);
 	if (df) {
+		//~ debug("notify_field_changed: '%s' found 0x%X: newval '%s'\n", field_id, df ? df->id : 0, newval);
 		for (int i = 0; i < MAX_CLIENTS; ++i)
 			if (client_data[i].srvaux) {
 				bool notfound = TRUE;
@@ -613,18 +636,13 @@ static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = cd ? cd->byte_len : 0; // add up lengths of all changed filenames
+	s->length = cd ? cd->byte_len : 0; // add up lengths of all changed filenames TODO paths not just names
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
 	s->muid = user;
 	debug("stat_event srv-aux %p len %d mtime %u version %u\n",
 		r->srv->aux, s->length, s->mtime, s->qid.version);
-
-	// side-effect: usually the console has a newer mtime than last time;
-	// so update mtimes on all 'text' files and their parent dirs, recursively.
-	// A better design might be a console callback, but this way seems cheaper for now.
-	update_console_mtimes_and_sizes(s->mtime);
 }
 
 static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
@@ -633,14 +651,21 @@ static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int off
 	if (cd) {
 		for (int i = 0; i < cd->count; ++i) {
 			assert(cd->changed[i]);
-			if ((end - out) + strlen(cd->changed[i]->name) + 1 > len) {
+			df =  cd->changed[i]; // the event file df isn't interesting: the field is
+			if ((end - out) + strlen(df->name) + 1 > len) {
 				memmove(cd->changed, cd->changed + i, (cd->count - i) * sizeof(Devfile *));
 				cd->count -= i;
 				cd->byte_len -= (end - out);
 				break;
 			}
-			end = stpncpy(end, cd->changed[i]->name, MAX_PATH_SUFFIX_SIZE);
+			end += pathcpy_recur(df, end, len);
+			// if it's a simple single-value field, and it fits, send the value after the path
+			if (df->doread == read_field && (end - out) + 16 < len) {
+				*end++ = '\t';
+				end +=  df->doread(r, df, end, len - (end - out), 0);
+			}
 			*end++ = '\n';
+			//~ debug("%s: wrote %d bytes so far\n", df->name, end - out);
 		}
 		cd->count = 0;
 		cd->byte_len = 0;

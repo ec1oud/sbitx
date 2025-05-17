@@ -1517,12 +1517,13 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	struct field *f = get_field("#console");
 	if (f) {
 		f->is_dirty = 1;
+		// oldval is empty: we aren't going to repeat the whole console in the notification
+		// we don't need to send the new text in the event either
+		notify_field_changed(f->cmd, NULL, NULL);
 		f->updated_at = millis();
 	}
-	// oldval is empty: we aren't going to repeat the whole console in the notification
-	notify_field_changed("#console", "", text);
 	if (sem[0].semantic == STYLE_FT8_RX)
-		notify_field_changed("ft8_1", "", text);
+		notify_field_changed("ft8_1-rcv", "", text);
 }
 
 void draw_console(cairo_t *gfx, struct field *f)
@@ -3882,6 +3883,9 @@ void update_field(struct field *f)
 		f->is_dirty = 1;
 	f->update_remote = 1;
 	f->updated_at = millis();
+	if (f->is_dirty)
+		notify_field_changed(f->cmd, NULL, f->value);
+	//~ printf("update_field %s %s\n", f->cmd, f->value);
 }
 
 static void hover_field(struct field *f)
@@ -3903,6 +3907,8 @@ static void edit_field(struct field *f, int action)
 	int v;
 	if (f == f_focus)
 		focus_since = millis();
+	char oldval[64];
+	strncpy(oldval, f->value, sizeof(oldval));
 
 	if (f->fn)
 	{
@@ -4002,6 +4008,7 @@ static void edit_field(struct field *f, int action)
 	f->is_dirty = 1;
 	f->update_remote = 1;
 	f->updated_at = millis();
+	notify_field_changed(f->cmd, oldval, f->value);
 	//	update_field(f);
 	settings_updated++;
 }
