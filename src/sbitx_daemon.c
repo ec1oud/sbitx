@@ -846,7 +846,7 @@ int set_field(const char *id, const char *value)
 	}
 
 	strncpy(oldval, f->value, sizeof(oldval));
-	
+
 	if (f->value_type == FIELD_NUMBER)
 	{
 		int v = atoi(value);
@@ -1298,12 +1298,13 @@ void write_console_semantic(const char *text, const text_span_semantic *sem, int
 	struct field *f = get_field("#console");
 	if (f) {
 		f->is_dirty = 1;
+		// oldval is empty: we aren't going to repeat the whole console in the notification
+		// we don't need to send the new text in the event either
+		notify_field_changed(f->cmd, NULL, NULL);
 		f->updated_at = millis();
 	}
-	// oldval is empty: we aren't going to repeat the whole console in the notification
-	notify_field_changed("#console", "", text);
 	if (sem[0].semantic == STYLE_FT8_RX)
-		notify_field_changed("ft8_1", "", text);
+		notify_field_changed("ft8_1-rcv", "", text);
 }
 
 /*!
@@ -2107,7 +2108,6 @@ int do_waterfall(struct field *f, int event, int a, int b, int c)
 
 void remote_execute(const char *cmd)
 {
-
 	if (q_remote_commands.overflow)
 		q_empty(&q_remote_commands);
 	while (*cmd)
