@@ -603,21 +603,24 @@ static int pathcpy_recur(const Devfile *df, char *out, int len) {
 void notify_field_changed(const char *field_id, const char *old, const char *newval) {
 	if (next_client_id == FIRST_CLIENT_ID)
 		return; // no clients connected, nobody to notify
-	// TODO do this below, after df and connected client are found
-	if (old && !strncmp(old, newval, 64))
-		return; // no change in value
 	Devfile *df = find_by_field_id(field_id);
 	if (df) {
 		//~ debug("notify_field_changed: '%s' found 0x%X: newval '%s'\n", field_id, df ? df->id : 0, newval);
 		for (int i = 0; i < MAX_CLIENTS; ++i)
 			if (client_data[i].srvaux) {
+				if (old && !strncmp(old, newval, 64))
+					return; // no change in value
 				bool notfound = TRUE;
 				for (int j = 0; j < MAX_EVENTS && notfound; ++j)
 					if (client_data[i].changed[j] == df)
 						notfound = FALSE;
 				if (notfound) {
+					char tmp[MAX_PATH_SUFFIX_SIZE];
 					client_data[i].changed[client_data[i].count++] = df;
-					client_data[i].byte_len += strlen(df->name) + 1;
+					// line length approximation: path len + tab + value len + newline
+					// the value will be up-to-date when the client reads it: not necessarily same as strlen(newval)
+					client_data[i].byte_len += pathcpy_recur(df, tmp, sizeof(tmp)) + 2 + (newval ? strlen(newval) : 0);
+					//~ debug("added '%s' to events: byte_len now %d\n", tmp, client_data[i].byte_len);
 				}
 			}
 	}
@@ -636,7 +639,7 @@ static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = cd ? cd->byte_len : 0; // add up lengths of all changed filenames TODO paths not just names
+	s->length = cd ? cd->byte_len : 0; // sum of lengths of all changed paths
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
@@ -655,10 +658,13 @@ static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int off
 			if ((end - out) + strlen(df->name) + 1 > len) {
 				memmove(cd->changed, cd->changed + i, (cd->count - i) * sizeof(Devfile *));
 				cd->count -= i;
-				cd->byte_len -= (end - out);
 				break;
 			}
-			end += pathcpy_recur(df, end, len);
+			{
+				int plen = pathcpy_recur(df, end, len);
+				end += plen;
+				cd->byte_len -= plen;
+			}
 			// if it's a simple single-value field, and it fits, send the value after the path
 			if (df->doread == read_field && (end - out) + 16 < len) {
 				*end++ = '\t';
