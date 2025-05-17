@@ -76,6 +76,8 @@ static void stat_text(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index)
 static int read_text(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static void stat_text_spans(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
 static int read_text_spans(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void stat_text_lineindex(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_text_lineindex(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static void update_console_mtimes_and_sizes(time_t mtime);
 
 /* Datatypes */
@@ -164,6 +166,7 @@ typedef enum {
 	QID_CH_RECEIVED,
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
+	QID_CH_RECEIVED_LINE_INDEX,
 	QID_CH_SENT,
 	QID_CH_SEND,
 	QID_MASK = 0xFF
@@ -268,6 +271,8 @@ static Devfile devfiles[] = {
 		STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_SPANS, "spans", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
 		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1-rcv_spans", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_LINE_INDEX, "lineindex", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
+		STYLE_FT8_RX, stat_text_lineindex, read_text_lineindex, "ft8_1-rcv_lineindex", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
 		STYLE_FT8_TX, stat_text, read_text, "ft8_1-sent", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SEND, "send", QID_FT8_CHANNEL1, SEM_NONE,
@@ -434,6 +439,33 @@ static void stat_text_spans(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_
 static int read_text_spans(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	//~ debug("read_text_spans '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text_spans((text_span_semantic *)out, len, offset, df->semantic_filter);
+}
+
+static void stat_text_lineindex(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
+	// expectation of the file server's user: verify that the struct packs as intended
+	assert(sizeof(text_lineindex_entry) == sizeof(uint64_t));
+	s->type = 0;
+	s->dev = 0;
+	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	s->qid.type = 0;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = df->version;
+	s->mode = df->mode;
+	s->mtime = console_last_time();
+	s->atime = df->atime;
+	s->length = console_current_lineindex_length(df->semantic_filter, data_index);
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+	debug("stat_text_lineindex '%s' 0x%x filter %d console last line %d len %d mtime %u version %u\n",
+		df->name, df->id, df->semantic_filter, data_index, s->length, s->mtime, s->qid.version);
+}
+
+static int read_text_lineindex(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
+	//~ debug("read_text_lineindex '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	return get_console_text_lineindex((text_lineindex_entry *)out, len, offset, df->semantic_filter);
 }
 
 static void update_console_mtimes_and_sizes(time_t mtime) {

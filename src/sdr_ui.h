@@ -79,6 +79,11 @@ typedef struct {
 	uint8_t semantic : 8; // used directly as style in this UI
 } text_span_semantic;
 
+typedef struct {
+	uint32_t row : 32;
+	uint32_t offset : 32;
+} text_lineindex_entry;
+
 time_t time_sbitx();
 void setup();
 void loop();
@@ -101,8 +106,10 @@ void write_console(sbitx_style style, const char *text);
 void write_console_semantic(const char *text, const text_span_semantic *sem, int sem_count);
 int get_console_text(char *buf, int max, int from_char, sbitx_style filter);
 int get_console_text_spans(text_span_semantic *buf, int max, int from_char, sbitx_style filter);
+int get_console_text_lineindex(text_lineindex_entry *buf, int max, int from_char, sbitx_style filter);
 int console_current_length(sbitx_style filter, int last_line);
 int console_current_spans_length(sbitx_style filter, int last_line);
+int console_current_lineindex_length(sbitx_style filter, int last_line);
 time_t console_last_time();
 int console_last_line(); // the line into which incoming text will go / is going
 int web_get_console(char *buff, int max);
