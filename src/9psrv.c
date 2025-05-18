@@ -67,6 +67,7 @@ static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index
 static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static int size_read(Ixp9Req *r, const Devfile *df);
 static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static int read_state(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static void write_field(const Devfile *df, const char *val, int len, int offset);
 //~ static void stat_field_meta(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
 static int read_field_meta(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
@@ -133,6 +134,10 @@ typedef enum {
 	QID_BATTERY,
 	QID_BATT_VOLTAGE,
 	QID_S_METER,
+	QID_STATE,
+	QID_POWER,
+	QID_SWR,
+	QID_DRIVE,
 	QID_SPECTRUM,
 	QID_SPECTRUM_META,
 	QID_SPECTRUM_SPAN,
@@ -205,6 +210,14 @@ static Devfile devfiles[] = {
 
 	{ QID_S_METER, "s", QID_ROOT, SEM_NONE,
 		nil, read_field, "#smeter", nil, nil, DMEXCL|0444, 0, 0, 0 },
+	{ QID_STATE, "state", QID_ROOT, SEM_NONE,
+		nil, read_state, "#tx", nil, nil, DMEXCL|0444, 0, 0, 0 },
+	{ QID_SWR, "swr", QID_ROOT, SEM_NONE,
+		nil, read_field, "#vswr", nil, nil, DMEXCL|0444, 0, 0, 0 },
+	{ QID_POWER, "power", QID_ROOT, SEM_NONE,
+		nil, read_field, "#fwdpower", nil, nil, DMEXCL|0444, 0, 0, 0 },
+	{ QID_DRIVE, "drive", QID_ROOT, SEM_NONE,
+		nil, read_field, "tx_power", write_field, "tx_power", DMEXCL|0666, 0, 0, 0 },
 
 	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
 		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
@@ -352,6 +365,14 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 		}
 	}
 	return 0;
+}
+
+static int read_state(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
+	if (offset >= 2)
+		return 0;
+	char *s = is_in_tx() ? "tx" : "rx";
+	char *end = stpncpy(out, s, len);
+	return end - out;
 }
 
 static void stat_text(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
