@@ -1219,8 +1219,11 @@ int get_field_value(const char *cmd, char *value)
 int get_field_meta(const char *cmd, int *min, int *max, int *step)
 {
 	struct field *f = get_field(cmd);
-	if (!f)
+	if (!f) {
+		printf("get_field_meta: '%s' not found\n", cmd);
 		return -1;
+	}
+	//~ printf("get_field_meta %s: min %ld max %ld step %d\n", cmd, f->min, f->max, f->step);
 	if (min)
 		*min = f->min;
 	if (max)

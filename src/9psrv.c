@@ -133,11 +133,9 @@ typedef enum {
 	QID_TEXT = 0x10, // whole console
 	QID_BATTERY,
 	QID_BATT_VOLTAGE,
-	QID_S_METER,
 	QID_STATE,
 	QID_POWER,
 	QID_SWR,
-	QID_DRIVE,
 	QID_SPECTRUM,
 	QID_SPECTRUM_META,
 	QID_SPECTRUM_SPAN,
@@ -154,7 +152,7 @@ typedef enum {
 } DevfileID;
 
 typedef enum {
-	QID_CH_FREQ = 1,
+	QID_CH_FREQ = 0x400,
 	QID_CH_FREQ_META,
 	QID_CH_FREQ_LABEL,
 	QID_CH_FREQ_FMT,
@@ -168,13 +166,27 @@ typedef enum {
 	QID_CH_IF_GAIN_MIN,
 	QID_CH_IF_GAIN_MAX,
 	QID_CH_IF_GAIN_STEP,
+	QID_CH_S_METER,
+	QID_CH_S_METER_META,
+	QID_CH_S_METER_LABEL,
+	QID_CH_S_METER_FMT,
+	QID_CH_S_METER_MIN,
+	QID_CH_S_METER_MAX,
+	QID_CH_S_METER_STEP,
+	QID_CH_DRIVE,
+	QID_CH_DRIVE_META,
+	QID_CH_DRIVE_LABEL,
+	QID_CH_DRIVE_FMT,
+	QID_CH_DRIVE_MIN,
+	QID_CH_DRIVE_MAX,
+	QID_CH_DRIVE_STEP,
 	QID_CH_RECEIVED,
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
 	QID_CH_RECEIVED_LINE_INDEX,
 	QID_CH_SENT,
 	QID_CH_SEND,
-	QID_MASK = 0xFF
+	QID_MASK = 0x4FF
 } ChannelDevfileID;
 
 /* Global Vars */
@@ -208,16 +220,12 @@ static Devfile devfiles[] = {
 	{ QID_BATT_VOLTAGE, "voltage", QID_BATTERY, SEM_NONE,
 		nil, read_field, "#batt", nil, nil, DMEXCL|0444, 0, 0, 0 },
 
-	{ QID_S_METER, "s", QID_ROOT, SEM_NONE,
-		nil, read_field, "#smeter", nil, nil, DMEXCL|0444, 0, 0, 0 },
 	{ QID_STATE, "state", QID_ROOT, SEM_NONE,
 		nil, read_state, "#tx", nil, nil, DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR, "swr", QID_ROOT, SEM_NONE,
 		nil, read_field, "#vswr", nil, nil, DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER, "power", QID_ROOT, SEM_NONE,
 		nil, read_field, "#fwdpower", nil, nil, DMEXCL|0444, 0, 0, 0 },
-	{ QID_DRIVE, "drive", QID_ROOT, SEM_NONE,
-		nil, read_field, "tx_power", write_field, "tx_power", DMEXCL|0666, 0, 0, 0 },
 
 	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
 		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
@@ -278,6 +286,36 @@ static Devfile devfiles[] = {
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", DMEXCL|0444, 0, 0, 0 },
 
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER, "s", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "#smeter", nil, nil, DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_META, "s.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+		SEM_NONE, nil, read_field_meta, "#smeter-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+		SEM_NONE, nil, read_field_meta, "#smeter-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+		SEM_NONE, nil, read_field_meta, "#smeter-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+		SEM_NONE, nil, read_field_meta, "#smeter-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+		SEM_NONE, nil, read_field_meta, "#smeter-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE, "drive", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "tx_power", write_field, "tx_power", DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_META, "drive.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+		SEM_NONE, nil, read_field_meta, "tx_power-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+		SEM_NONE, nil, read_field_meta, "tx_power-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+		SEM_NONE, nil, read_field_meta, "tx_power-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+		SEM_NONE, nil, read_field_meta, "tx_power-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+		SEM_NONE, nil, read_field_meta, "tx_power-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
 		STYLE_FT8_RX, stat_text, read_text, "ft8_1-rcv", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META, "received.meta", QID_FT8_CHANNEL1,
@@ -302,6 +340,13 @@ static int size_read(Ixp9Req *r, const Devfile *df) {
 	return df->doread(r, df, buf, MAX_FILE_SIZE, 0);
 }
 
+static int read_name_no_suffix(const Devfile *df, char *out, int len) {
+	char *hyphen_p = strchr(df->read_name, '-');
+	if (!hyphen_p)
+		return stpncpy(out, df->read_name, len) - out;
+	return stpncpy(out, df->read_name, hyphen_p - df->read_name) - out;
+}
+
 static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	char val[64];
 	get_field_value(df->read_name, val); // TODO unsafe: pass sizeof as len
@@ -324,12 +369,23 @@ static void write_field(const Devfile *df, const char *val, int len, int offset)
 }
 
 static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, int offset) {
-	int min, max, step;
-	int r = get_field_meta(df->read_name, &min, &max, &step);
+	int min = 0, max = 100, step = 1;
+	char id[16];
+	read_name_no_suffix(df, id, sizeof(id));
+	int r = get_field_meta(id, &min, &max, &step);
 	debug("read_field_meta '%s' 0x%x '%s' len %d offset %d; field min %d max %d step %d\n",
-		df->name, df->id, df->read_name, len, offset, min, max, step);
+		df->name, df->id, id, len, offset, min, max, step);
 	if (offset == 0) {
 		switch (df->id & QID_MASK) {
+			case QID_SPECTRUM_SPAN_CHOICES: {
+				int r = stpncpy(out, get_field_selections(id), len) - out;
+				// replace slashes with tabs (not sbitx-specific: in general, combobox items could have slashes)
+				for (int i = 0; i < r; ++i)
+					if (out[i] == '/')
+						out[i] = '\t';
+				return r;
+			}
+
 			case QID_CH_FREQ_LABEL:
 				return snprintf(out, len, "Frequency");
 			case QID_CH_FREQ_FMT:
@@ -343,15 +399,6 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 				debug("   special for freq step: %d\n", step);
 				return snprintf(out, len, "%d", step);
 			
-			case QID_SPECTRUM_SPAN_CHOICES: {
-				int r = stpncpy(out, get_field_selections(df->read_name), len) - out;
-				// replace slashes with tabs (not sbitx-specific: in general, combobox items could have slashes)
-				for (int i = 0; i < r; ++i)
-					if (out[i] == '/')
-						out[i] = '\t';
-				return r;
-			}
-
 			case QID_CH_IF_GAIN_LABEL:
 				return snprintf(out, len, "IF");
 			case QID_CH_IF_GAIN_FMT:
@@ -361,6 +408,28 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 			case QID_CH_IF_GAIN_MAX:
 				return snprintf(out, len, "%d", max);
 			case QID_CH_IF_GAIN_STEP:
+				return snprintf(out, len, "%d", step);
+			
+			case QID_CH_S_METER_LABEL:
+				return snprintf(out, len, "Signal");
+			case QID_CH_S_METER_FMT:
+				return snprintf(out, len, "%%.0f");
+			case QID_CH_S_METER_MIN:
+				return snprintf(out, len, "%d", min);
+			case QID_CH_S_METER_MAX:
+				return snprintf(out, len, "%d", max);
+			case QID_CH_S_METER_STEP:
+				return snprintf(out, len, "%d", step);
+			
+			case QID_CH_DRIVE_LABEL:
+				return snprintf(out, len, "Drive");
+			case QID_CH_DRIVE_FMT:
+				return snprintf(out, len, "%%.0f");
+			case QID_CH_DRIVE_MIN:
+				return snprintf(out, len, "%d", min);
+			case QID_CH_DRIVE_MAX:
+				return snprintf(out, len, "%d", max);
+			case QID_CH_DRIVE_STEP:
 				return snprintf(out, len, "%d", step);
 		}
 	}
