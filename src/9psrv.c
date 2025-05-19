@@ -152,34 +152,29 @@ typedef enum {
 } DevfileID;
 
 typedef enum {
-	QID_CH_FREQ = 0x400,
+	// common channel metadata
+	QID_CH_MIN = 0x400,
+	QID_CH_MAX,
+	QID_CH_STEP,
+	QID_CH_FLOAT_INT_FMT,
+	// ideally label would come from the 'struct field' too, but those are uglier (all caps)
+	
+	// channel field-specific metadata
+	QID_CH_FREQ,
 	QID_CH_FREQ_META,
 	QID_CH_FREQ_LABEL,
-	QID_CH_FREQ_FMT,
-	QID_CH_FREQ_MIN,
-	QID_CH_FREQ_MAX,
+	//~ QID_CH_FREQ_FMT,
 	QID_CH_FREQ_STEP,
 	QID_CH_IF_GAIN,
 	QID_CH_IF_GAIN_META,
 	QID_CH_IF_GAIN_LABEL,
-	QID_CH_IF_GAIN_FMT,
-	QID_CH_IF_GAIN_MIN,
-	QID_CH_IF_GAIN_MAX,
-	QID_CH_IF_GAIN_STEP,
 	QID_CH_S_METER,
 	QID_CH_S_METER_META,
 	QID_CH_S_METER_LABEL,
-	QID_CH_S_METER_FMT,
-	QID_CH_S_METER_MIN,
-	QID_CH_S_METER_MAX,
-	QID_CH_S_METER_STEP,
+	//~ QID_CH_S_METER_FMT,
 	QID_CH_DRIVE,
 	QID_CH_DRIVE_META,
 	QID_CH_DRIVE_LABEL,
-	QID_CH_DRIVE_FMT,
-	QID_CH_DRIVE_MIN,
-	QID_CH_DRIVE_MAX,
-	QID_CH_DRIVE_STEP,
 	QID_CH_RECEIVED,
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
@@ -261,11 +256,11 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-label", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-format", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-min", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-max", nil, "", DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
@@ -277,13 +272,13 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-label", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-format", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-min", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-max", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER, "s", QID_FT8_CHANNEL1, SEM_NONE,
@@ -292,13 +287,13 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-label", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-format", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-min", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-max", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-step", nil, "", DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE, "drive", QID_FT8_CHANNEL1, SEM_NONE,
@@ -307,13 +302,13 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-label", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-format", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-min", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-max", nil, "", DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-step", nil, "", DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
@@ -386,14 +381,17 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 				return r;
 			}
 
+			case QID_CH_MIN:
+				return snprintf(out, len, "%d", min);
+			case QID_CH_MAX:
+				return snprintf(out, len, "%d", max);
+			case QID_CH_STEP:
+				return snprintf(out, len, "%d", step);
+			case QID_CH_FLOAT_INT_FMT:
+				return snprintf(out, len, "%%.0f");
+			
 			case QID_CH_FREQ_LABEL:
 				return snprintf(out, len, "Frequency");
-			case QID_CH_FREQ_FMT:
-				return snprintf(out, len, "%%.0f");
-			case QID_CH_FREQ_MIN:
-				return snprintf(out, len, "%d", min);
-			case QID_CH_FREQ_MAX:
-				return snprintf(out, len, "%d", max);
 			case QID_CH_FREQ_STEP:
 				step = field_int("STEP");
 				debug("   special for freq step: %d\n", step);
@@ -401,36 +399,12 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 			
 			case QID_CH_IF_GAIN_LABEL:
 				return snprintf(out, len, "IF");
-			case QID_CH_IF_GAIN_FMT:
-				return snprintf(out, len, "%%.0f");
-			case QID_CH_IF_GAIN_MIN:
-				return snprintf(out, len, "%d", min);
-			case QID_CH_IF_GAIN_MAX:
-				return snprintf(out, len, "%d", max);
-			case QID_CH_IF_GAIN_STEP:
-				return snprintf(out, len, "%d", step);
 			
 			case QID_CH_S_METER_LABEL:
 				return snprintf(out, len, "Signal");
-			case QID_CH_S_METER_FMT:
-				return snprintf(out, len, "%%.0f");
-			case QID_CH_S_METER_MIN:
-				return snprintf(out, len, "%d", min);
-			case QID_CH_S_METER_MAX:
-				return snprintf(out, len, "%d", max);
-			case QID_CH_S_METER_STEP:
-				return snprintf(out, len, "%d", step);
 			
 			case QID_CH_DRIVE_LABEL:
 				return snprintf(out, len, "Drive");
-			case QID_CH_DRIVE_FMT:
-				return snprintf(out, len, "%%.0f");
-			case QID_CH_DRIVE_MIN:
-				return snprintf(out, len, "%d", min);
-			case QID_CH_DRIVE_MAX:
-				return snprintf(out, len, "%d", max);
-			case QID_CH_DRIVE_STEP:
-				return snprintf(out, len, "%d", step);
 		}
 	}
 	return 0;
