@@ -1642,11 +1642,16 @@ int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 }
 
 void popover_call_button_clicked(GtkWidget *widget, void *data) {
-	char ft8_message[64];
-	// strcpy(ft8_message, console_stream[console_selected_i].text);
-	hd_strip_decoration(ft8_message, console_stream[console_selected_i].text);
-	// TODO this is silly: use console_selected_callsign instead of re-parsing the whole line
-	ft8_process(ft8_message, FT8_START_QSO);
+	if (strcmp(field_str("CALL"), "...")) {
+		char message[64];
+		char grid[5];
+		strncpy(grid, field_str("MYGRID"), sizeof(grid));
+		grid[4] = 0;
+		snprintf(message, sizeof(message), "%s %s %s", field_str("CALL"), field_str("MYCALLSIGN"), grid);
+		ft8_tx(message, field_int("TX_PITCH"));
+	} else {
+		printf("can't call unknown hashed callsign\n");
+	}
 	gtk_popover_popdown(GTK_POPOVER(console_popover));
 }
 
@@ -7998,82 +8003,6 @@ void do_control_action(char *cmd)
 			}
 		}
 	}
-}
-int get_ft8_callsign(const char *message, char *other_callsign)
-{
-	int i = 0, j = 0, m = 0, len, cur_field = 0;
-	char fields[4][32];
-	other_callsign[0] = 0;
-	len = (int)strlen(message);
-	const char *mycall = field_str("MYCALLSIGN");
-	while (i <= len)
-	{
-		if (message[i] == ' ' || message[i] == '\0' || j >= 31)
-		{
-			i++;
-			while (i < len && message[i] == ' ')
-			{
-				i++;
-			}
-			if (m > 3)
-			{
-				break;
-			}
-			fields[m][j] = '\0';
-			if (cur_field == 4)
-			{
-				if (strcmp(fields[m], "~"))
-				{
-					return -1; // no tilde
-				}
-			}
-			cur_field++;
-			if (cur_field > 5)
-			{
-				m++;
-			}
-			j = 0;
-		}
-		else
-		{
-			fields[m][j++] = message[i];
-			i++;
-		}
-
-		if (m > 4)
-		{
-			return -2; // to many fields
-		}
-	}
-	if (cur_field < 7)
-	{
-		return -3; // to few fields
-	}
-	if (!strcmp(fields[0], "CQ"))
-	{
-		if (m == 4)
-		{
-			i = 2; // CQ xx callsign grid
-		}
-		else
-		{
-			i = 1; // CQ callsign grid
-		}
-	}
-	else if (!strcmp(fields[0], mycall))
-	{
-		i = 1; // mycallsign callsign
-	}
-	else if (!strcmp(fields[1], mycall))
-	{
-		i = 0; // mycallsign callsign
-	}
-	else
-	{
-		i = 1; // callsign other -the one we hear
-	}
-	strcpy(other_callsign, fields[i]);
-	return m;
 }
 
 void initialize_macro_selection() {
