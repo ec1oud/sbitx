@@ -263,6 +263,7 @@ int macro_exec(int key, char *dest){
 			*q = 0;
 		} 
 	}
+	//~ printf("macro %d: %s -> %s\n", key, m->text, dest);
 	return 0;
 }
 
