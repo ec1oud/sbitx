@@ -1551,6 +1551,13 @@ int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 	return _start;
 }
 
+void popover_reply_button_clicked(GtkWidget *widget, void *data) {
+	char ft8_message[64];
+	hd_strip_decoration(ft8_message, console_stream[console_selected_line].text);
+	ft8_process(ft8_message, FT8_CONTINUE_QSO);
+	gtk_popover_popdown(GTK_POPOVER(console_popover));
+}
+
 void popover_call_button_clicked(GtkWidget *widget, void *data) {
 	if (strcmp(field_str("CALL"), "...")) {
 		char message[64];
@@ -1588,13 +1595,18 @@ int console_long_press(void *p)
 		if (!console_popover) {
 			console_popover = gtk_popover_new(display_area);
 			popover_label = gtk_label_new(console_selected_callsign);
+			popover_log_label = gtk_label_new(last_log_date_time_str);
+			GtkWidget *reply_button = gtk_button_new_with_label("Reply");
 			GtkWidget *call_button = gtk_button_new_with_label("Call");
 			GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 			gtk_box_pack_start(GTK_BOX(vbox), popover_label, FALSE, FALSE, 0);
+			gtk_box_pack_start(GTK_BOX(vbox), popover_log_label, FALSE, FALSE, 0);
+			gtk_box_pack_start(GTK_BOX(vbox), reply_button, FALSE, FALSE, 0);
 			gtk_box_pack_start(GTK_BOX(vbox), call_button, FALSE, FALSE, 0);
 			gtk_container_add(GTK_CONTAINER(console_popover), vbox);
 			g_object_set(vbox, "margin", 10, NULL);
 			gtk_widget_set_margin_top(vbox, 20);
+			g_signal_connect(reply_button, "clicked", G_CALLBACK(popover_reply_button_clicked), NULL);
 			g_signal_connect(call_button, "clicked", G_CALLBACK(popover_call_button_clicked), NULL);
 		} else {
 			gtk_label_set_text(GTK_LABEL(popover_label), console_selected_callsign);
