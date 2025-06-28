@@ -210,6 +210,7 @@ struct font_style font_table[] = {
 	{STYLE_GRID, 1, 0.8, 0, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_TIME, 0, 0.8, 0.8, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_SNR, 1, 1, 1, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{STYLE_RST, 0.7, 0.7, 0.7, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{STYLE_FREQ, 0, 0.7, 0.5, "Mono", 11, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 
 	// mode-specific semantics
@@ -277,6 +278,7 @@ uint32_t console_current_line = 0; // line number (start_row) in spans: incremen
 int console_current_i = 0; // index in console_stream: always < MAX_CONSOLE_LINES
 int console_selected_i = -1;
 char console_selected_callsign[12];
+int console_selected_time = -1;
 time_t console_current_time = 0;
 
 int update_logs = 0;
@@ -1615,7 +1617,9 @@ void draw_console(cairo_t *gfx, struct field *f)
 */
 int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 	int _start = -1, _len = -1;
-	for (int i = 0; i < MAX_CONSOLE_LINE_STYLES; ++i)
+	for (int i = 0; i < MAX_CONSOLE_LINE_STYLES; ++i) {
+		//~ printf("console_extract_semantic %d: found %d %d:%d sem %d\tin %s\n", sem, i,
+			//~ console_stream[line].spans[i].start_column, console_stream[line].spans[i].length, console_stream[line].spans[i].semantic, console_stream[line].text);
 		if (console_stream[line].spans[i].semantic == sem) {
 			_start = console_stream[line].spans[i].start_column;
 			_len = console_stream[line].spans[i].length;
@@ -1634,6 +1638,7 @@ int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 			++_len; // point to the null terminator
 			break;
 		}
+	}
 	if (_start < 0 || _len < 0)
 		return -1;
 	char *end = stpncpy(out, console_stream[line].text + _start, MIN(_len, outlen));
@@ -1650,12 +1655,7 @@ void popover_reply_button_clicked(GtkWidget *widget, void *data) {
 
 void popover_call_button_clicked(GtkWidget *widget, void *data) {
 	if (strcmp(field_str("CALL"), "...")) {
-		char message[64];
-		char grid[5];
-		strncpy(grid, field_str("MYGRID"), sizeof(grid));
-		grid[4] = 0;
-		snprintf(message, sizeof(message), "%s %s %s", field_str("CALL"), field_str("MYCALLSIGN"), grid);
-		ft8_tx(message, field_int("TX_PITCH"));
+		ft8_call(console_selected_time);
 	} else {
 		printf("can't call unknown hashed callsign\n");
 	}
@@ -1678,9 +1678,24 @@ int console_long_press(void *p)
 		callsign_bounds.width = console_avg_char_width * call_len;
 		callsign_bounds.y = console->y + console->height - (console_current_i - console_selected_i + 1) * line_height;
 		callsign_bounds.height = line_height;
-		//~ printf("long press: sel %d cur %d; '%s' from '%s' @ x %d..%d y %d\n",
-			//~ console_selected_i, console_current_i, console_selected_callsign, console_stream[console_selected_i].text,
-			//~ callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
+
+		char grid[7];
+		if (console_extract_semantic(grid, sizeof(grid), console_selected_i, STYLE_GRID) >= 0)
+			field_set("EXCH", grid);
+
+		char rst[7];
+		if (console_extract_semantic(rst, sizeof(rst), console_selected_i, STYLE_SNR) >= 0)
+			field_set("SENT", rst);
+
+		char time[7];
+		if (console_extract_semantic(time, sizeof(time), console_selected_i, STYLE_TIME) >= 0)
+			console_selected_time = atoi(time);
+
+		bool contains_my_call = strstr(console_stream[console_selected_i].text, get_field("#mycallsign")->value);
+
+		printf("long press: sel %d cur %d mycall? %d; %d '%s' from '%s' @ x %d..%d y %d\n",
+			console_selected_i, console_current_i, contains_my_call, console_selected_time, console_selected_callsign, console_stream[console_selected_i].text,
+			callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
 
 		//~ char log_entries[1024];
 		//~ memset(log_entries, 0, sizeof(log_entries));
@@ -1707,11 +1722,12 @@ int console_long_press(void *p)
 
 		static GtkWidget *popover_label = NULL;
 		static GtkWidget *popover_log_label = NULL;
+		static GtkWidget *reply_button = NULL;
 		if (!console_popover) {
 			console_popover = gtk_popover_new(display_area);
 			popover_label = gtk_label_new(console_selected_callsign);
 			popover_log_label = gtk_label_new(last_log_date_time_str);
-			GtkWidget *reply_button = gtk_button_new_with_label("Reply");
+			reply_button = gtk_button_new_with_label("Reply");
 			GtkWidget *call_button = gtk_button_new_with_label("Call");
 			GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 			gtk_box_pack_start(GTK_BOX(vbox), popover_label, FALSE, FALSE, 0);
@@ -1729,6 +1745,8 @@ int console_long_press(void *p)
 		}
 		gtk_popover_set_pointing_to(GTK_POPOVER(console_popover), &callsign_bounds);
 		gtk_widget_show_all(console_popover);
+		if (!contains_my_call)
+			gtk_widget_hide(reply_button);
 		update_field(console);
 	}
 	return G_SOURCE_REMOVE; // one-shot
