@@ -67,7 +67,7 @@ static const int kFieldType_style_map[] = {
 	STYLE_FT8_RX,	// FTX_FIELD_TOKEN_WITH_ARG
 	STYLE_CALLER,	// FTX_FIELD_CALL
 	STYLE_GRID,		// FTX_FIELD_GRID
-	STYLE_LOG		// FTX_FIELD_RST
+	STYLE_RST		// FTX_FIELD_RST (from the message text, not observed SNR)
 };
 
 #define FT8_SYMBOL_BT 2.0f ///< symbol smoothing filter bandwidth factor (BT)
@@ -644,6 +644,8 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
 					sem[sem_i - 1].length = sem[sem_i].start_column - sem[sem_i - 1].start_column;
 					//~ printf("length of span %d: %d - %d = %d\n", sem_i - 1, sem[sem_i].start_column, sem[sem_i - 1].start_column, sem[sem_i - 1].length);
 				}
+				//~ printf("%s: span @ %d sem %d from FT8 %d\n", text,
+				//~ 	sem[sem_i].start_column, kFieldType_style_map[spans.types[span_i]], spans.types[span_i]);
 				if (spans.types[span_i] == FTX_FIELD_CALL) {
 					// detect whether it's my callsign or the caller's
 					char *call = text + spans.offsets[span_i];
@@ -1046,12 +1048,60 @@ void ft8_on_signal_report(){
 	//enter_qso();
 }
 
+/*!
+	start a QSO: call the callsign specified by the "CALL" field,
+	based on a previous selected message that occurred at time \a sel_time.
+	The "SENT" field may hold previously-observed RST,
+	and "EXCH" may hold the recipient's grid.
+*/
+void ft8_call(int sel_time) {
+	char message[FTX_MAX_MESSAGE_LENGTH];
+
+	call = field_str("CALL");
+	if (!call[0]) {
+		printf("CALL field empty: nobody to call\n");
+		return;
+	}
+
+	modem_abort();
+	tx_off();
+
+	exchange = field_str("EXCH");
+	report_send = field_str("SENT");
+	mycall = field_str("MYCALLSIGN");
+	// TODO allow pitch adjustment between timeslots: don't hold it fixed from here on
+	tx_pitch = field_int("TX_PITCH");
+	//use only the first 4 letters of the grid
+	strcpy(mygrid, field_str("MYGRID"));
+	mygrid[4] = 0;
+	field_set("NR", mygrid);
+
+	// for CQ (or other) message that started in the 0 or 30-second timeslot,
+	// send reply in the 15 or 45 second; and vice-versa
+	// i.e. tx on 2nd and 4th slots for msgs on 1st and 3rd
+	const int msg_second = msg_time % 100;
+	ft8_tx1st = !(msg_second < 15 || (msg_second >= 30 && msg_second < 45));
+
+	snprintf(message, sizeof(message), "%s %s %s", call, mycall, mygrid);
+	field_set("TEXT", message);
+	//~ printf("ft8_call: sel_time %d tx1st %d '%s'\n", sel_time, ft8_tx1st, message);
+	ft8_tx(message, tx_pitch);
+}
+
+/*!
+	Start or continue a QSO as appropriate for the \a message:
+	\a operation may be FT8_START_QSO or FT8_CONTINUE_QSO
+	This should mostly not be used, because it throws away information that we already have:
+	if \a message came from ft8_lib, we also have spans to identify the fields;
+	or if we want to start a QSO, call ft8_call() above (which depends
+	on fields containing information that we already have).
+	The remaining legitimate usecase is only when the user types the message in the "TEXT" field.
+*/
 void ft8_process(char *message, int operation){
 	char buff[100], reply_message[100], *p;
 	int auto_respond = 0;
 
 	printf("ft8_process:%d[%s]\n", operation, message);
-
 
 	if (ft8_message_tokenize(message) == -1)
 		return;
@@ -1064,6 +1114,8 @@ void ft8_process(char *message, int operation){
 	tx_pitch = field_int("TX_PITCH");
 	if (!strcmp(field_str("FT8_AUTO"), "ON"))
 		auto_respond = 1;
+
+	//~ printf("tokens: '%s' '%s' '%s' '%s'; exch '%s'\n", m1, m2, m3, m4, exchange);
 
 	//use only the first 4 letters of the grid
 	strcpy(mygrid, field_str("MYGRID"));
