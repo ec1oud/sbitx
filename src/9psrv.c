@@ -29,6 +29,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <ixp_local.h>
+#include <ixp.h>
 
 #include "modem_ft8.h"
 #include "sdr_ui.h"
@@ -49,6 +50,9 @@
 #ifndef TRUE
 #define TRUE 1
 #define FALSE 0
+#endif
+#ifndef nil
+#define nil 0 // AKA NULL
 #endif
 #define MAX_OPEN_FDS 256
 #define MAX_CLIENTS 256
@@ -125,11 +129,11 @@ static char
 typedef enum {
 	QID_ROOT = 0,
 	QID_EVENT = 1,
-	
+
 	QID_SETTINGS = 0x10,
 	QID_SETTINGS_CALL,
 	QID_SETTINGS_GRID,
-	
+
 	QID_TEXT = 0x20, // whole console
 	QID_BATTERY,
 	QID_BATT_VOLTAGE,
@@ -141,7 +145,7 @@ typedef enum {
 	QID_SPECTRUM_SPAN_CHOICES,
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
-	
+
 	QID_MODES = 0x100,
 	QID_MODES_SSB = 0x101,
 	QID_MODES_FT8 = 0x102,
@@ -157,11 +161,11 @@ typedef enum {
 	QID_META_STEP,
 	QID_META_FLOAT_INT_FMT,
 	// ideally label would come from the 'struct field' too, but those are uglier (all caps)
-	
+
 	// top-level fields with standard metadata
 	QID_SWR = 0x800,
 	QID_POWER,
-	
+
 	// nonstandard metadata for the above
 	QID_SWR_LABEL = 0x400,
 	QID_POWER_LABEL,
@@ -204,158 +208,158 @@ static uint64_t next_client_id = FIRST_CLIENT_ID;
 #define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
 	{ QID_ROOT, "/", 0, SEM_NONE, // TODO get rid of?
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_EVENT, "event", QID_ROOT, SEM_NONE,
-		stat_event, read_event, nil, nil, nil, DMEXCL|0444, 0, 0, 0 },
+		stat_event, read_event, nil, nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SETTINGS, "settings", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SETTINGS_CALL, "callsign", QID_SETTINGS, SEM_NONE,
-		nil, read_field, "#mycallsign", write_field, "#mycallsign", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "#mycallsign", write_field, "#mycallsign", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_GRID, "grid", QID_SETTINGS, SEM_NONE,
-		nil, read_field, "#mygrid", write_field, "#mygrid", DMEXCL|0666, 0, 0, 0 },
-		
+		nil, read_field, "#mygrid", write_field, "#mygrid", P9_DMEXCL|0666, 0, 0, 0 },
+
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
-		stat_text, read_text, "#console", nil, "", DMEXCL|0444, 0, 0, 0 },
-		
+		stat_text, read_text, "#console", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_BATTERY, "battery", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_BATT_VOLTAGE, "voltage", QID_BATTERY, SEM_NONE,
-		nil, read_field, "#batt", nil, nil, DMEXCL|0444, 0, 0, 0 },
+		nil, read_field, "#batt", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_STATE, "state", QID_ROOT, SEM_NONE,
-		nil, read_state, "#tx", nil, nil, DMEXCL|0444, 0, 0, 0 },
-		
+		nil, read_state, "#tx", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_SWR, "swr", QID_ROOT, SEM_NONE,
-		nil, read_field, "#vswr", nil, nil, DMEXCL|0444, 0, 0, 0 },
+		nil, read_field, "#vswr", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META, "swr.meta", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SWR_LABEL, "label", QID_SWR + QID_META,
-		SEM_NONE, nil, read_field_meta, "#vswr-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#vswr-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META_FLOAT_INT_FMT, "format", QID_SWR + QID_META,
-		SEM_NONE, nil, read_field_meta, "#vswr-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#vswr-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META_MIN, "min", QID_SWR + QID_META,
-		SEM_NONE, nil, read_field_meta, "#vswr-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#vswr-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META_MAX, "max", QID_SWR + QID_META,
-		SEM_NONE, nil, read_field_meta, "#vswr-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#vswr-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META_STEP, "step", QID_SWR + QID_META,
-		SEM_NONE, nil, read_field_meta, "#vswr-step", nil, "", DMEXCL|0444, 0, 0, 0 },
-		
+		SEM_NONE, nil, read_field_meta, "#vswr-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_POWER, "power", QID_ROOT, SEM_NONE,
-		nil, read_field, "#fwdpower", nil, nil, DMEXCL|0444, 0, 0, 0 },
+		nil, read_field, "#fwdpower", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META, "power.meta", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_POWER_LABEL, "label", QID_POWER + QID_META,
-		SEM_NONE, nil, read_field_meta, "#fwdpower-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#fwdpower-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META_FLOAT_INT_FMT, "format", QID_POWER + QID_META,
-		SEM_NONE, nil, read_field_meta, "#fwdpower-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#fwdpower-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META_MIN, "min", QID_POWER + QID_META,
-		SEM_NONE, nil, read_field_meta, "#fwdpower-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#fwdpower-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META_MAX, "max", QID_POWER + QID_META,
-		SEM_NONE, nil, read_field_meta, "#fwdpower-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#fwdpower-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META_STEP, "step", QID_POWER + QID_META,
-		SEM_NONE, nil, read_field_meta, "#fwdpower-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#fwdpower-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
-		stat_raw, read_raw, "", nil, "", DMEXCL|0666, 0, 0, 0 },
+		stat_raw, read_raw, "", nil, "", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SPECTRUM_META, "spectrum.meta", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN, "span", QID_SPECTRUM_META, SEM_NONE,
-		nil, read_field, "#span", write_field, "#span", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "#span", write_field, "#span", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN_META, "span.meta", QID_SPECTRUM_META, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN_CHOICES, "choices", QID_SPECTRUM_SPAN_META, SEM_NONE,
-		nil, read_field_meta, "#span-choices", nil, nil, DMEXCL|0666, 0, 0, 0 },
+		nil, read_field_meta, "#span-choices", nil, nil, P9_DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr
 
 	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	//~ { QID_MODES_SSB, "ssb", QID_MODES,
-		//~ nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+		//~ nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
 	//~ { QID_SSB_CHANNEL1, "1", QID_MODES_SSB,
-		//~ nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		//~ nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	//~ { QID_SSB_CHANNEL1 + QID_CH_FREQ, "frequency", QID_SSB_CHANNEL1,
-		//~ nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+		//~ nil, read_field, "r1:freq", write_field, "r1:freq", P9_DMEXCL|0666, 0, 0, 0 },
 	//~ { QID_SSB_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_SSB_CHANNEL1,
-		//~ nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+		//~ nil, read_field, "r1:gain", write_field, "r1:gain", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_MODES_FT8, "ft8", QID_MODES, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1, "1", QID_MODES_FT8, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ, "frequency", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "r1:freq", write_field, "r1:freq", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_META, "frequency.meta", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "r1:freq-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:freq-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
-		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", DMEXCL|0666, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", P9_DMEXCL|0666, 0, 0, 0 },
 	// TODO drive, pitch, tx1st; separate QSO fields and ctl file to transmit?
 
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "r1:gain", write_field, "r1:gain", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META, "if_gain.meta", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
-		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER, "s", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, read_field, "#smeter", nil, nil, DMEXCL|0444, 0, 0, 0 },
+		nil, read_field, "#smeter", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_META, "s.meta", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
-		SEM_NONE, nil, read_field_meta, "#smeter-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#smeter-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
-		SEM_NONE, nil, read_field_meta, "#smeter-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#smeter-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
-		SEM_NONE, nil, read_field_meta, "#smeter-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#smeter-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
-		SEM_NONE, nil, read_field_meta, "#smeter-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#smeter-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
-		SEM_NONE, nil, read_field_meta, "#smeter-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "#smeter-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE, "drive", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, read_field, "tx_power", write_field, "tx_power", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "tx_power", write_field, "tx_power", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_META, "drive.meta", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
-		SEM_NONE, nil, read_field_meta, "tx_power-label", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "tx_power-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
-		SEM_NONE, nil, read_field_meta, "tx_power-format", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "tx_power-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
-		SEM_NONE, nil, read_field_meta, "tx_power-min", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "tx_power-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
-		SEM_NONE, nil, read_field_meta, "tx_power-max", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "tx_power-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
-		SEM_NONE, nil, read_field_meta, "tx_power-step", nil, "", DMEXCL|0444, 0, 0, 0 },
+		SEM_NONE, nil, read_field_meta, "tx_power-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
-		STYLE_FT8_RX, stat_text, read_text, "ft8_1-rcv", nil, "", DMEXCL|0444, 0, 0, 0 },
+		STYLE_FT8_RX, stat_text, read_text, "ft8_1-rcv", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META, "received.meta", QID_FT8_CHANNEL1,
-		STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0555, 0, 0, 0 },
+		STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_SPANS, "spans", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
-		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1-rcv_spans", nil, "", DMEXCL|0444, 0, 0, 0 },
+		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1-rcv_spans", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED_LINE_INDEX, "lineindex", QID_FT8_CHANNEL1 + QID_CH_RECEIVED_META,
-		STYLE_FT8_RX, stat_text_lineindex, read_text_lineindex, "ft8_1-rcv_lineindex", nil, "", DMEXCL|0444, 0, 0, 0 },
+		STYLE_FT8_RX, stat_text_lineindex, read_text_lineindex, "ft8_1-rcv_lineindex", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
-		STYLE_FT8_TX, stat_text, read_text, "ft8_1-sent", nil, "", DMEXCL|0444, 0, 0, 0 },
+		STYLE_FT8_TX, stat_text, read_text, "ft8_1-sent", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SEND, "send", QID_FT8_CHANNEL1, SEM_NONE,
-		nil, read_field, "#text_in", write_field, "#text_in", DMEXCL|0666, 0, 0, 0 },
+		nil, read_field, "#text_in", write_field, "#text_in", P9_DMEXCL|0666, 0, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
@@ -422,26 +426,26 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 				return snprintf(out, len, "%d", step);
 			case QID_META_FLOAT_INT_FMT:
 				return snprintf(out, len, "%%.0f");
-			
+
 			case QID_CH_FREQ_LABEL:
 				return snprintf(out, len, "Frequency");
 			case QID_CH_FREQ_STEP:
 				step = field_int("STEP");
 				debug("   special for freq step: %d\n", step);
 				return snprintf(out, len, "%d", step);
-			
+
 			case QID_CH_IF_GAIN_LABEL:
 				return snprintf(out, len, "IF");
-			
+
 			case QID_CH_S_METER_LABEL:
 				return snprintf(out, len, "Signal");
-			
+
 			case QID_CH_DRIVE_LABEL:
 				return snprintf(out, len, "Drive");
-			
+
 			case QID_SWR_LABEL:
 				return snprintf(out, len, "SWR");
-			
+
 			case QID_POWER_LABEL:
 				return snprintf(out, len, "Power Out");
 		}
@@ -461,7 +465,7 @@ static void stat_text(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index)
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
 	s->qid.type = 0;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
@@ -523,7 +527,7 @@ static void stat_text_spans(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
 	s->qid.type = 0;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
@@ -550,7 +554,7 @@ static void stat_text_lineindex(Ixp9Req *r, IxpStat *s, const Devfile *df, int d
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
 	s->qid.type = 0;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
@@ -763,11 +767,11 @@ void notify_field_changed(const char *field_id, const char *old, const char *new
 
 static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
 	ClientEvents *cd = find_client_data(r->srv->aux, client_data);
-	
+
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
 	s->qid.type = 0;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
@@ -824,7 +828,7 @@ static void dostat(Ixp9Req *r, IxpStat *s, const Devfile *df, int index) {
 	s->type = 0;
 	s->dev = 0;
 	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
 	s->qid.type = df->mode >> 24;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
@@ -846,7 +850,7 @@ void rerrno(Ixp9Req *r, char *m) {
 
 void fs_attach(Ixp9Req *r) {
 	debug("fs_attach(%p fid %p) srv-aux %p\n", r, r->fid, next_client_id);
-	r->fid->qid.type = QTDIR;
+	r->fid->qid.type = P9_QTDIR;
 	r->fid->qid.path = (uintptr_t)r->fid;
 	r->fid->aux = newfidaux(devfiles, (void*)next_client_id);
 	// TODO return client_data ptr as srv->aux for this client rather than just using a recognizable fake pointer?
