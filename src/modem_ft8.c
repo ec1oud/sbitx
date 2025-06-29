@@ -251,19 +251,20 @@ static void synth_gfsk(const uint8_t* symbols, int n_sym, float f0, float symbol
 
 /*!
 	Encode ftx_tx_msg.payload onto audio carrier \a freq and output to \a signal.
-	\a is_ft4 chooses FT4 encoding instead of FT8.
 	@return the number of audio samples
 */
-int sbitx_ftx_msg_audio(int32_t freq, float *signal, bool is_ft4)
+int sbitx_ftx_msg_audio(int32_t freq, float *signal)
 {
 	if (!freq)
 		freq = field_int("TX_PITCH");
     float frequency = 1.0 * freq;
 
-    int num_tones = (is_ft4) ? FT4_NN : FT8_NN;
-    float symbol_period = (is_ft4) ? FT4_SYMBOL_PERIOD : FT8_SYMBOL_PERIOD;
-    float symbol_bt = (is_ft4) ? FT4_SYMBOL_BT : FT8_SYMBOL_BT;
-    float slot_time = (is_ft4) ? FT4_SLOT_TIME : FT8_SLOT_TIME;
+	bool is_ft4 = !strcmp(field_str("MODE"), "FT4");
+
+	int num_tones = is_ft4 ? FT4_NN : FT8_NN;
+	float symbol_period = is_ft4 ? FT4_SYMBOL_PERIOD : FT8_SYMBOL_PERIOD;
+	float symbol_bt = is_ft4 ? FT4_SYMBOL_BT : FT8_SYMBOL_BT;
+	float slot_time = is_ft4 ? FT4_SLOT_TIME : FT8_SLOT_TIME;
 
     // Second, encode the binary message as a sequence of FSK tones
     uint8_t tones[num_tones]; // Array of 79 tones (symbols)
@@ -290,12 +291,11 @@ int sbitx_ftx_msg_audio(int32_t freq, float *signal, bool is_ft4)
 
 /*!
 	Encode \a message into ftx_tx_msg.
-	\a is_ft4 chooses FT4 encoding instead of FT8.
 	This should only be used when the user has typed \a message;
 	for programmatic cases, prefer sbitx_ft8_encode_3f'()
 	@return the return value from ftx_message_encode (see enum ftx_message_rc_t in ft8_lib/message.h)
 */
-int sbitx_ft8_encode(char *message, bool is_ft4)
+int sbitx_ft8_encode(char *message)
 {
     ftx_message_rc_t rc = ftx_message_encode(&ftx_tx_msg, &hash_if, message);
     if (rc != FTX_MESSAGE_RC_OK)
@@ -306,11 +306,10 @@ int sbitx_ft8_encode(char *message, bool is_ft4)
 
 /*!
 	Compose a message from the 3 fields \a call_to, \a call_de and \a extra into ftx_tx_msg.
-	\a is_ft4 chooses FT4 encoding instead of FT8.
 	@return the return value from ftx_message_encode_std/nonstd/free
 	(see enum ftx_message_rc_t in ft8_lib/message.h)
 */
-int sbitx_ft8_encode_3f(const char* call_to, const char* call_de, const char* extra, bool is_ft4)
+int sbitx_ft8_encode_3f(const char* call_to, const char* call_de, const char* extra)
 {
 	ftx_message_rc_t rc = ftx_message_encode_std(&ftx_tx_msg, &hash_if, call_to, call_de, extra);
 	if (rc != FTX_MESSAGE_RC_OK) {
@@ -528,11 +527,13 @@ static int message_callsign_count(const ftx_message_offsets_t *spans)
 	return ret;
 }
 
-static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
+static int sbitx_ft8_decode(float *signal, int num_samples)
 {
     int sample_rate = 12000;
+	bool is_ft8 = !strcmp(field_str("MODE"), "FT8");
 
-    LOG(LOG_DEBUG, "Sample rate %d Hz, %d samples, %.3f seconds\n", sample_rate, num_samples, (double)num_samples / sample_rate);
+    LOG(LOG_DEBUG, "sbitx_ftx_decode: %s sample rate %d Hz, %d samples, %.3f seconds\n",
+		(is_ft8 ? "FT8" : "FT4"), sample_rate, num_samples, (double)num_samples / sample_rate);
 
     // Compute FFT over the whole signal and store it
     monitor_t mon;
@@ -585,7 +586,7 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
         decoded_hashtable[i] = NULL;
     }
 
-		int n_decodes = 0;
+	int n_decodes = 0;
     // Go over candidates and attempt to decode messages
     for (int idx = 0; idx < num_candidates; ++idx)
     {
@@ -735,8 +736,8 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
 //current message, it is not the user setting of the same number
 static int ft8_repeat = 5;
 
-int sbitx_ft8_encode(char *message, bool is_ft4);
-int sbitx_ft8_encode_3f(const char* call_to, const char* call_de, const char* extra, bool is_ft4);
+int sbitx_ft8_encode(char *message);
+int sbitx_ft8_encode_3f(const char* call_to, const char* call_de, const char* extra);
 
 void ft8_setmode(int config){
 	switch(config){
@@ -764,7 +765,7 @@ static void ft8_start_tx(int offset_seconds){
 	int freq = field_int("TX_PITCH");
 	if (freq != ft8_pitch)
 		ft8_pitch = freq;
-	ft8_tx_nsamples = sbitx_ftx_msg_audio(freq,  ft8_tx_buff, /* is_ft4*/ false);
+	ft8_tx_nsamples = sbitx_ftx_msg_audio(freq,  ft8_tx_buff);
 
 	snprintf(buf, sizeof(buf), "%02d%02d%02d  TX     %4d ~ %s\n", t->tm_hour, t->tm_min, t->tm_sec, ft8_pitch, ft8_tx_text);
 	write_console(STYLE_FT8_TX, buf);
@@ -854,7 +855,7 @@ void ft8_tx_3f(const char* call_to, const char* call_de, const char* extra) {
 	sprintf(buff, "%02d%02d%02d  TX     %4d ~ %s\n", t->tm_hour, t->tm_min, t->tm_sec, ft8_pitch, ft8_tx_text);
 	write_console(STYLE_FT8_QUEUED, buff);
 
-	sbitx_ft8_encode_3f(call_to, call_de, extra, false);
+	sbitx_ft8_encode_3f(call_to, call_de, extra);
 
 	// also set the times of transmission
 	char str_tx1st[10], str_repeat[10];
@@ -878,9 +879,6 @@ void ft8_tx_3f(const char* call_to, const char* call_de, const char* extra) {
 }
 
 void *ft8_thread_function(void *ptr){
-	FILE *pf;
-	char buff[1000], mycallsign_upper[20]; //there are many ways to crash sbitx, bufferoverflow of callsigns is 1
-
 	//wake up every 100 msec to see if there is anything to decode
 	while(1){
 		usleep(1000);
@@ -889,7 +887,7 @@ void *ft8_thread_function(void *ptr){
 			continue;
 
 		ft8_do_decode = 0;
-		sbitx_ft8_decode(ft8_rx_buffer, ft8_rx_buff_index, true);
+		sbitx_ft8_decode(ft8_rx_buffer, ft8_rx_buff_index);
 		//let the next batch begin
 		ft8_rx_buff_index = 0;
 	}
