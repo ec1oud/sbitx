@@ -1150,7 +1150,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 
 	// STEP 4a: BIN processing functions for a better life.
 
-	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE)
+	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_FT4 && r->mode != MODE_2TONE)
 	{
 		double sampling_rate = 96000.0; // Sample rate
 		static double noise_est[MAX_BINS] = {0};
@@ -1392,7 +1392,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 	modem_rx(rx_list->mode, output_speaker, MAX_BINS / 2);
 
 	// Apply RXEQ after Modem only on non-digital modes
-	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE)
+	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_FT4 && r->mode != MODE_2TONE)
 	{
 		if (rx_eq_is_enabled == 1)
 		{
@@ -1513,7 +1513,7 @@ void tx_process(
 		eq_initialized = 1;
 	}
 
-	if (in_tx && (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE && r->mode != MODE_CW && r->mode != MODE_CWR))
+	if (in_tx && (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_FT4 && r->mode != MODE_2TONE && r->mode != MODE_CW && r->mode != MODE_CWR))
 	{
 
 		// Apply compression is the value of the dial is set to 1-10 (0 = off)
@@ -1577,7 +1577,7 @@ void tx_process(
 			i_sample = (1.0 * (vfo_read(&tone_a) + vfo_read(&tone_b))) / 50000000000.0;
 		else if (r->mode == MODE_CALIBRATE)
 			i_sample = (1.0 * (vfo_read(&tone_a))) / 30000000000.0;
-		else if (r->mode == MODE_CW || r->mode == MODE_CWR || r->mode == MODE_FT8)
+		else if (r->mode == MODE_CW || r->mode == MODE_CWR || r->mode == MODE_FT8 || r->mode == MODE_FT4)
 			i_sample = modem_next_sample(r->mode) / 3;
 		else if (r->mode == MODE_AM)
 		{
@@ -2344,6 +2344,8 @@ void sdr_request(char *request, char *response)
 			rx_list->mode = MODE_CALIBRATE;
 		else if (!strcmp(value, "FT8"))
 			rx_list->mode = MODE_FT8;
+		else if (!strcmp(value, "FT4"))
+			rx_list->mode = MODE_FT4;
 		else if (!strcmp(value, "AM"))
 			rx_list->mode = MODE_AM;
 		else if (!strcmp(value, "DIGI"))

@@ -486,8 +486,9 @@ static int *tx_mod_buff = NULL;
 static int tx_mod_index = 0;
 static int tx_mod_max = 0;
 
+// must be in sync with enum _mode in sdr.h
 char *mode_name[MAX_MODES] = {
-	"USB", "LSB", "CW", "CWR", "NBFM", "AM", "FT8", "PSK31", "RTTY",
+	"USB", "LSB", "CW", "CWR", "NBFM", "AM", "FT8", "FT4", "PSK31", "RTTY",
 	"DIGI", "2TONE"};
 
 static int serial_fd = -1;
@@ -640,7 +641,7 @@ struct field main_controls[] = {
 	{"#bw", do_bandwidth, 495, 5, 40, 40, "BW", 40, "", FIELD_NUMBER, STYLE_FIELD_VALUE,
 	 "", 50, 5000, 50, COMMON_CONTROL},
 	{"r1:mode", NULL, 5, 5, 40, 40, "MODE", 40, "USB", FIELD_SELECTION, STYLE_FIELD_VALUE,
-	 "USB/LSB/AM/CW/CWR/FT8/DIGI/2TONE", 0, 0, 0, COMMON_CONTROL},
+	 "USB/LSB/AM/CW/CWR/FT8/FT4/DIGI/2TONE", 0, 0, 0, COMMON_CONTROL},
 
 	/* logger controls */
 	{"#contact_callsign", do_text, 5, 50, 85, 20, "CALL", 70, "", FIELD_TEXT, STYLE_LOG,
@@ -1614,8 +1615,8 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
 		gtk_clipboard_set_text(clipboard, console_line, -1);
 
-		// FT8-specific functionality
-		if (!strcmp(get_field("r1:mode")->value, "FT8")) {
+		// FTx-specific functionality
+		if (!strncmp(get_field("r1:mode")->value, "FT", 2)) {
 			struct field *console = get_field("#console");
 			const int line_height = font_table[console->font_index].height;
 			int call_start = console_extract_semantic(console_selected_callsign,
@@ -1779,6 +1780,8 @@ static int mode_id(const char *mode_str){
 		return MODE_LSB;
 	else if (!strcmp(mode_str, "FT8"))
 		return MODE_FT8;
+	else if (!strcmp(mode_str, "FT4"))
+		return MODE_FT4;
 	else if (!strcmp(mode_str, "PSK31"))
 		return MODE_PSK31;
 	else if (!strcmp(mode_str, "RTTY"))
@@ -1880,9 +1883,14 @@ void enter_qso()
 	write_console(STYLE_LOG, buff);
 	printf(buff);
 	update_logs = 1;
-	//wipe the call if not FT8
-	if (strcmp(field_str("MODE"), "FT8"))
+	// wipe the call if not FT8/FT4
+	switch (mode_id(field_str("MODE"))) {
+	case MODE_FT4:
+	case MODE_FT8:
+		break;
+	default:
 		call_wipe();
+	}
 }
 
 static int get_band_stack_index(const char *p_value)
@@ -2771,6 +2779,7 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx)
 	pitch = field_int("PITCH");
 	tx_pitch = field_int("TX_PITCH");
 	struct field *mode_f = get_field("r1:mode");
+	const bool mode_ftx = !strcmp(mode_f->value, "FT8") || !strcmp(mode_f->value, "FT4");
 	freq = atol(get_field("r1:freq")->value);
 
 	span = atof(get_field("#span")->value);
@@ -2965,7 +2974,7 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx)
 		cairo_stroke(gfx);
 	}
 
-	if (tx_pitch >= f_spectrum->x && !strcmp(mode_f->value, "FT8")){
+	if (tx_pitch >= f_spectrum->x && mode_ftx){
 		cairo_set_source_rgb(gfx, palette[COLOR_TX_PITCH][0],
 			palette[COLOR_TX_PITCH][1], palette[COLOR_TX_PITCH][2]);
 		cairo_move_to(gfx, tx_pitch, f->y);
@@ -3475,7 +3484,7 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx)
 		cairo_stroke(gfx);
 	}
 
-	if (tx_pitch >= f_spectrum->x && !strcmp(mode_f->value, "FT8"))
+	if (tx_pitch >= f_spectrum->x && mode_ftx)
 	{
 		cairo_set_source_rgb(gfx, palette[COLOR_TX_PITCH][0],
 							 palette[COLOR_TX_PITCH][1], palette[COLOR_TX_PITCH][2]);
@@ -3884,6 +3893,7 @@ static void layout_ui()
 	int waterfall_height = 10;
 	switch (m_id)
 	{
+	case MODE_FT4:
 	case MODE_FT8:
 		// Place buttons and calculate highest Y position for FT8
 		field_move("CONSOLE", 5, y1, 350, y2 - y1 - 52);
@@ -4647,6 +4657,7 @@ void set_filter_high_low(int hz)
 		low = hz;
 		high = hz;
 		break;
+	case MODE_FT4:
 	case MODE_FT8:
 		low = 50;
 		high = 4000;
@@ -4714,6 +4725,8 @@ int do_text(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 
 	if (event == FIELD_EDIT)
 	{
+		struct field *mode_f = get_field("r1:mode");
+		const bool mode_ftx = !strcmp(mode_f->value, "FT8") || !strcmp(mode_f->value, "FT4");
 		// if it is a command, then execute it and clear the field
 		if (f->value[0] == COMMAND_ESCAPE && strlen(f->value) > 1 && (a == '\n' || a == MIN_KEY_ENTER))
 		{
@@ -4721,7 +4734,7 @@ int do_text(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 			f->value[0] = 0;
 			update_field(f);
 		}
-		else if ((a == '\n' || a == MIN_KEY_ENTER) && !strcmp(get_field("r1:mode")->value, "FT8") && f->value[0] != COMMAND_ESCAPE)
+		else if ((a == '\n' || a == MIN_KEY_ENTER) && mode_ftx && f->value[0] != COMMAND_ESCAPE)
 		{
 			ft8_tx(f->value, field_int("TX_PITCH"));
 			f->value[0] = 0;
@@ -4809,6 +4822,7 @@ int do_pitch(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 		case MODE_AM:
 			bw = field_int("BW_AM");
 			break;
+		case MODE_FT4:
 		case MODE_FT8:
 			bw = 4000;
 			break;
@@ -5167,7 +5181,7 @@ int do_macro(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 			tx_on(TX_SOFT);
 		}
 
-		if (!strcmp(mode, "FT8") && strlen(buff))
+		if ((!strcmp(mode, "FT8") || !strcmp(mode, "FT4")) && strlen(buff))
 		{
 			ft8_tx(buff, atoi(get_field("#tx_pitch")->value));
 			set_field("#text_in", "");
@@ -6807,6 +6821,7 @@ void set_radio_mode(char *mode)
 	case MODE_AM:
 		new_bandwidth = field_int("BW_AM");
 		break;
+	case MODE_FT4:
 	case MODE_FT8:
 		new_bandwidth = 4000;
 		set_field("#current_macro", "FT8");
@@ -7242,6 +7257,7 @@ gboolean ui_tick(gpointer gook)
 		case MODE_CWR:
 			tick_count = 50;
 			break;
+		case MODE_FT4:
 		case MODE_FT8:
 			tick_count = 200;
 			break;
