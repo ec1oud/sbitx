@@ -1083,7 +1083,7 @@ int set_field(const char *id, const char *value)
 	}
 
 	strncpy(oldval, f->value, sizeof(oldval));
-	
+
 	if (f->value_type == FIELD_NUMBER)
 	{
 		int v = atoi(value);
@@ -7114,6 +7114,10 @@ void zbitx_poll(int all){
 			//ft8_process(ft8_message, FT8_START_QSO);
 			remote_execute(ft8_message);
 			printf("FT8 processing from zbitx\n");
+		}
+		else if (!strncmp(buff, "SHUTDOWN", 8)) {
+			printf("Shutting down system...\n");
+			system("sudo /sbin/shutdown -h now");
 		}
 		else{
 			if (!strncmp(buff, "OPEN", 4)){
