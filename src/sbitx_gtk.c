@@ -7139,6 +7139,10 @@ void zbitx_poll(int all){
 			remote_execute(ft8_message);
 			printf("FT8 processing from zbitx\n");
 		}
+		else if (!strncmp(buff, "SHUTDOWN", 8)) {
+			printf("Shutting down system...\n");
+			system("sudo /sbin/shutdown -h now");
+		}
 		else{
 			if (!strncmp(buff, "OPEN", 4)){
 				update_logs = 1;
