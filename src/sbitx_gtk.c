@@ -1579,6 +1579,9 @@ void popover_first_button_clicked(GtkWidget *widget, void *data) {
 		gtk_popover_popdown(GTK_POPOVER(console_popover));
 	} else { // "Copy"
 		field_set("TEXT", console_line);
+		// copy it to the clipboard too
+		GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+		gtk_clipboard_set_text(clipboard, console_line, -1);
 	}
 }
 
@@ -1593,6 +1596,13 @@ void popover_call_button_clicked(GtkWidget *widget, void *data) {
 
 int console_long_press(void *p)
 {
+	char console_line[64];
+	hd_strip_decoration(console_line, console_stream[console_selected_line].text);
+	// copy console line to X11 selection
+	GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_PRIMARY);
+	gtk_clipboard_set_text(clipboard, console_line, -1);
+
+	// FT8-specific functionality
 	if (!strcmp(get_field("r1:mode")->value, "FT8")) {
 		struct field *console = get_field("#console");
 		const int line_height = font_table[console->font_index].height;
@@ -1622,10 +1632,10 @@ int console_long_press(void *p)
 			if (console_extract_semantic(time, sizeof(time), console_selected_line, STYLE_TIME) >= 0)
 				console_selected_time = atoi(time);
 
-			contains_my_call = strstr(console_stream[console_selected_line].text, get_field("#mycallsign")->value);
+			contains_my_call = strstr(console_line, get_field("#mycallsign")->value);
 
 			printf("long press: sel %d cur %d mycall? %d; %d '%s' from '%s' @ x %d..%d y %d\n",
-				console_selected_line, console_current_line, contains_my_call, console_selected_time, console_selected_callsign, console_stream[console_selected_line].text,
+				console_selected_line, console_current_line, contains_my_call, console_selected_time, console_selected_callsign, console_line,
 				target_bounds.x, target_bounds.x + target_bounds.width, target_bounds.y);
 
 			//~ char log_entries[1024];
