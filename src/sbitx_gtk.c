@@ -1571,11 +1571,15 @@ int console_extract_semantic(char *out, int outlen, int line, sbitx_style sem) {
 	return _start;
 }
 
-void popover_reply_button_clicked(GtkWidget *widget, void *data) {
-	char ft8_message[64];
-	hd_strip_decoration(ft8_message, console_stream[console_selected_line].text);
-	ft8_process(ft8_message, FT8_CONTINUE_QSO);
-	gtk_popover_popdown(GTK_POPOVER(console_popover));
+void popover_first_button_clicked(GtkWidget *widget, void *data) {
+	char console_line[64];
+	hd_strip_decoration(console_line, console_stream[console_selected_line].text);
+	if (!strcmp(gtk_button_get_label(GTK_BUTTON(widget)), "Reply")) {
+		ft8_process(console_line, FT8_CONTINUE_QSO);
+		gtk_popover_popdown(GTK_POPOVER(console_popover));
+	} else { // "Copy"
+		field_set("TEXT", console_line);
+	}
 }
 
 void popover_call_button_clicked(GtkWidget *widget, void *data) {
@@ -1594,84 +1598,99 @@ int console_long_press(void *p)
 		const int line_height = font_table[console->font_index].height;
 		int call_start = console_extract_semantic(console_selected_callsign,
 			sizeof(console_selected_callsign), console_selected_line, STYLE_CALLER);
-		if (call_start < 0)
-			return G_SOURCE_REMOVE;
-		field_set("CALL", console_selected_callsign);
-		int call_len = strlen(console_selected_callsign);
-		GdkRectangle callsign_bounds;
-		callsign_bounds.x = console_avg_char_width * call_start;
-		callsign_bounds.width = console_avg_char_width * call_len;
-		callsign_bounds.y = console->y + console->height - (console_current_line - console_selected_line + 1) * line_height;
-		callsign_bounds.height = line_height;
-
-		char grid[7];
-		if (console_extract_semantic(grid, sizeof(grid), console_selected_line, STYLE_GRID) >= 0)
-			field_set("EXCH", grid);
-
-		char rst[7];
-		if (console_extract_semantic(rst, sizeof(rst), console_selected_line, STYLE_SNR) >= 0)
-			field_set("SENT", rst);
-
-		char time[7];
-		if (console_extract_semantic(time, sizeof(time), console_selected_line, STYLE_TIME) >= 0)
-			console_selected_time = atoi(time);
-
-		bool contains_my_call = strstr(console_stream[console_selected_line].text, get_field("#mycallsign")->value);
-
-		printf("long press: sel %d cur %d mycall? %d; %d '%s' from '%s' @ x %d..%d y %d\n",
-			console_selected_line, console_current_line, contains_my_call, console_selected_time, console_selected_callsign, console_stream[console_selected_line].text,
-			callsign_bounds.x, callsign_bounds.x + callsign_bounds.width, callsign_bounds.y);
-
-		//~ char log_entries[1024];
-		//~ memset(log_entries, 0, sizeof(log_entries));
-		//~ int log_count = logbook_prev_log(log_entries, sizeof(log_entries), console_selected_callsign);
-		//~ printf("found %d in logbook: %s\n", log_count, log_entries);
-
-		struct tm last_log_tm;
+		GdkRectangle target_bounds;
+		target_bounds.y = console->y + console->height - (console_current_line - console_selected_line + 1) * line_height;
+		target_bounds.height = line_height;
 		char last_log_date_time_str[64];
 		memset(last_log_date_time_str, 0, sizeof(last_log_date_time_str));
-		int log_count = logbook_last_date(&last_log_tm, console_selected_callsign);
-		if (log_count) {
-			size_t dtslen = strftime(last_log_date_time_str, sizeof(last_log_date_time_str), "%F %H:%M", &last_log_tm);
-			if (dtslen) {
-				const time_t last_log = mktime(&last_log_tm);
-				const time_t now = time_sbitx();
-				const double diff = difftime(now, last_log);
-				const int days_ago = diff / 86400.0;
-				//~ printf("%s: time %lld now %lld; seconds ago: %lf %lld days ago: %d\n", last_log_date_time_str, last_log, now, diff, (now - last_log), days_ago);
-				if (days_ago > 0)
-					snprintf(last_log_date_time_str + dtslen, sizeof(last_log_date_time_str) - dtslen, " %d days ago", days_ago);
-				printf("%s: found %d QSOs in logbook, most recent: %s\n", console_selected_callsign, log_count, last_log_date_time_str);
+		bool contains_my_call = false;
+		if (call_start >= 0) {
+			field_set("CALL", console_selected_callsign);
+			int call_len = strlen(console_selected_callsign);
+			target_bounds.x = console_avg_char_width * call_start;
+			target_bounds.width = console_avg_char_width * call_len;
+
+			char grid[7];
+			if (console_extract_semantic(grid, sizeof(grid), console_selected_line, STYLE_GRID) >= 0)
+				field_set("EXCH", grid);
+
+			char rst[7];
+			if (console_extract_semantic(rst, sizeof(rst), console_selected_line, STYLE_SNR) >= 0)
+				field_set("SENT", rst);
+
+			char time[7];
+			if (console_extract_semantic(time, sizeof(time), console_selected_line, STYLE_TIME) >= 0)
+				console_selected_time = atoi(time);
+
+			contains_my_call = strstr(console_stream[console_selected_line].text, get_field("#mycallsign")->value);
+
+			printf("long press: sel %d cur %d mycall? %d; %d '%s' from '%s' @ x %d..%d y %d\n",
+				console_selected_line, console_current_line, contains_my_call, console_selected_time, console_selected_callsign, console_stream[console_selected_line].text,
+				target_bounds.x, target_bounds.x + target_bounds.width, target_bounds.y);
+
+			//~ char log_entries[1024];
+			//~ memset(log_entries, 0, sizeof(log_entries));
+			//~ int log_count = logbook_prev_log(log_entries, sizeof(log_entries), console_selected_callsign);
+			//~ printf("found %d in logbook: %s\n", log_count, log_entries);
+
+			struct tm last_log_tm;
+			int log_count = logbook_last_date(&last_log_tm, console_selected_callsign);
+			if (log_count) {
+				size_t dtslen = strftime(last_log_date_time_str, sizeof(last_log_date_time_str), "%F %H:%M", &last_log_tm);
+				if (dtslen) {
+					const time_t last_log = mktime(&last_log_tm);
+					const time_t now = time_sbitx();
+					const double diff = difftime(now, last_log);
+					const int days_ago = diff / 86400.0;
+					//~ printf("%s: time %lld now %lld; seconds ago: %lf %lld days ago: %d\n", last_log_date_time_str, last_log, now, diff, (now - last_log), days_ago);
+					if (days_ago > 0)
+						snprintf(last_log_date_time_str + dtslen, sizeof(last_log_date_time_str) - dtslen, " %d days ago", days_ago);
+					printf("%s: found %d QSOs in logbook, most recent: %s\n", console_selected_callsign, log_count, last_log_date_time_str);
+				}
 			}
+		} else {
+			target_bounds.x = console->x;
+			target_bounds.width = console->width;
 		}
 
 		static GtkWidget *popover_label = NULL;
 		static GtkWidget *popover_log_label = NULL;
-		static GtkWidget *reply_button = NULL;
+		static GtkWidget *first_button = NULL;
+		static GtkWidget *call_button = NULL;
 		if (!console_popover) {
 			console_popover = gtk_popover_new(display_area);
 			popover_label = gtk_label_new(console_selected_callsign);
 			popover_log_label = gtk_label_new(last_log_date_time_str);
-			reply_button = gtk_button_new_with_label("Reply");
-			GtkWidget *call_button = gtk_button_new_with_label("Call");
+			first_button = gtk_button_new_with_label("Reply");
+			call_button = gtk_button_new_with_label("Call");
 			GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 			gtk_box_pack_start(GTK_BOX(vbox), popover_label, FALSE, FALSE, 0);
 			gtk_box_pack_start(GTK_BOX(vbox), popover_log_label, FALSE, FALSE, 0);
-			gtk_box_pack_start(GTK_BOX(vbox), reply_button, FALSE, FALSE, 0);
+			gtk_box_pack_start(GTK_BOX(vbox), first_button, FALSE, FALSE, 0);
 			gtk_box_pack_start(GTK_BOX(vbox), call_button, FALSE, FALSE, 0);
 			gtk_container_add(GTK_CONTAINER(console_popover), vbox);
 			g_object_set(vbox, "margin", 10, NULL);
 			gtk_widget_set_margin_top(vbox, 20);
-			g_signal_connect(reply_button, "clicked", G_CALLBACK(popover_reply_button_clicked), NULL);
+			g_signal_connect(first_button, "clicked", G_CALLBACK(popover_first_button_clicked), NULL);
 			g_signal_connect(call_button, "clicked", G_CALLBACK(popover_call_button_clicked), NULL);
 		} else {
 			gtk_label_set_text(GTK_LABEL(popover_label), console_selected_callsign);
 			gtk_label_set_text(GTK_LABEL(popover_log_label), last_log_date_time_str);
 		}
-		gtk_popover_set_pointing_to(GTK_POPOVER(console_popover), &callsign_bounds);
+		gtk_popover_set_pointing_to(GTK_POPOVER(console_popover), &target_bounds);
 		gtk_widget_show_all(console_popover);
-		if (!contains_my_call)
-			gtk_widget_hide(reply_button);
+		if (call_start >= 0) {
+			// current console line is an incoming message
+			gtk_button_set_label(GTK_BUTTON(first_button), "Reply");
+			if (!contains_my_call)
+				gtk_widget_hide(first_button);
+		} else {
+			gtk_label_set_text(GTK_LABEL(popover_label), "");
+			gtk_label_set_text(GTK_LABEL(popover_log_label), "");
+			// current console line is something else (outgoing message, or just text)
+			gtk_button_set_label(GTK_BUTTON(first_button), "Copy");
+			gtk_widget_hide(call_button);
+		}
 		update_field(console);
 	}
 	return G_SOURCE_REMOVE; // one-shot
