@@ -476,9 +476,10 @@ void modem_poll(int mode, int ticks){
 
 	switch(mode){
 	case MODE_FT8:
-		if (ticks % 20)
+		if (ticks % 20) {
 			t = time_sbitx();
-		ft8_poll(t % 60, tx_is_on);
+			ft8_poll(t % 60, tx_is_on);
+		}
 	break;
 	case MODE_CW:
 	case MODE_CWR: {
