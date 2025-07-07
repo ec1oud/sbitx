@@ -1073,10 +1073,11 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 	// i is the index into the time samples, picking from
 	// the samples added in the previous step
 	int m = 0;
+	const double sample_divisor = (sbitx_hw_version == SBITX_V4 ? 100000000.0 : 200000000.0);
 	// gather the samples into a time domain array
 	for (i = MAX_BINS / 2; i < MAX_BINS; i++)
 	{
-		i_sample = (1.0 * input_rx[j]) / 200000000.0;
+		i_sample = input_rx[j] / sample_divisor;
 		q_sample = 0;
 
 		j++;
