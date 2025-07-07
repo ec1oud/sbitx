@@ -21,7 +21,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include <stdbool.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
-#include <gdk/gdkx.h>
 #include <gtk/gtkx.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -52,6 +51,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "para_eq.h"
 #include "eq_ui.h"
 #include <time.h>
+
 extern int get_rx_gain(void);
 extern int calculate_s_meter(struct rx *r, double rx_gain);
 extern struct rx *rx_list;
@@ -3243,8 +3243,8 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx)
 
 	//--- S-Meter test W2JON
 	// Only show S-meter if we're not transmitting in LSB, USB, or AM modes
-if (!strcmp(field_str("SMETEROPT"), "ON") &&
-    !(in_tx && (!strcmp(mode_f->value, "USB") || !strcmp(mode_f->value, "LSB") || !strcmp(mode_f->value, "AM"))))
+	if (!strcmp(field_str("SMETEROPT"), "ON") &&
+ 	   !(in_tx && (!strcmp(mode_f->value, "USB") || !strcmp(mode_f->value, "LSB") || !strcmp(mode_f->value, "AM"))))
 	{
 		int s_meter_value = 0;
 		struct rx *current_rx = rx_list;
@@ -6569,32 +6569,6 @@ void tuning_isr(void)
 		tuning_ticks++;
 	if (tuning > 0)
 		tuning_ticks--;
-}
-
-void query_swr()
-{
-	uint8_t response[4];
-	int16_t vfwd, vref;
-	int vswr;
-	char buff[20];
-
-	if (!in_tx)
-		return;
-	if (i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		return;
-
-	vfwd = vref = 0;
-
-	memcpy(&vfwd, response, 2);
-	memcpy(&vref, response + 2, 2);
-	if (vref >= vfwd)
-		vswr = 100;
-	else
-		vswr = (10 * (vfwd + vref)) / (vfwd - vref);
-	sprintf(buff, "%d", (vfwd * 40) / 68);
-	set_field("#fwdpower", buff);
-	sprintf(buff, "%d", vswr);
-	set_field("#vswr", buff);
 }
 
 void oled_toggle_band()

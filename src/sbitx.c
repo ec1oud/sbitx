@@ -1520,9 +1520,6 @@ void tx_process(
 		if (compression_control_level >= 1 && compression_control_level <= 10)
 		{
 			float temp_input_mic[n_samples];
-			for (int i = 0; i < 5 && i < n_samples; i++)
-			{
-			}
 			// Convert input_mic (int32_t) to float for compression
 			for (int i = 0; i < n_samples; i++)
 			{
@@ -1533,15 +1530,9 @@ void tx_process(
 				}
 			}
 
-			for (int i = 0; i < 5 && i < n_samples; i++)
-			{
-			}
 			// Now we can call the apply_fixed_compression function with the parameters
 			apply_fixed_compression(temp_input_mic, n_samples, compression_control_level);
 
-			for (int i = 0; i < 5 && i < n_samples; i++)
-			{
-			}
 			// Convert back the processed data to int32_t after compression
 			for (int i = 0; i < n_samples; i++)
 			{
@@ -1550,9 +1541,6 @@ void tx_process(
 				} else {
 					input_mic[i] = (int32_t)(temp_input_mic[i] * 2000000000.0);
 				}
-			}
-			for (int i = 0; i < 5 && i < n_samples; i++)
-			{
 			}
 		}
 
