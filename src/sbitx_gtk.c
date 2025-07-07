@@ -267,6 +267,7 @@ int console_selected_line = -1;
 int update_logs = 0;
 
 // last non-zero power and swr, for the log
+int last_drive = 0;
 int last_fwdpwr = 0;
 int last_swr = 0;
 
@@ -1094,8 +1095,23 @@ int set_field(const char *id, const char *value)
 		if (v > f->max)
 			v = f->max;
 		if (v > 0) {
-			if (!strcmp(id, "#fwdpower"))
-				last_fwdpwr = v;
+			if (!strcmp(id, "#fwdpower")) {
+				int drive = field_int("DRIVE");
+				// ignore power readings at the tail of transmission:
+				// if the drive has not changed but the power
+				// seems to be tapering off drastically, don't record it
+				if (!(v + 15 < last_fwdpwr && drive == last_drive)) {
+					// remember last_fwdpwr, for recording in the log
+					last_fwdpwr = v;
+					last_drive = drive;
+					// zbitx pi pico sends swr before power, so last_swr should be up-to-date here
+					//~ printf("tx time %d drive %d: fwdpower %d swr %d\n",
+						//~ millis() - tx_start_time, drive, v, last_swr);
+				} else {
+					printf("tx time %d drive %d: fwdpower %d -> %d seems unlikely\n",
+						millis() - tx_start_time, drive, last_fwdpwr, v);
+				}
+			}
 			else if (!strcmp(id, "#vswr"))
 				last_swr = v;
 		}
@@ -5669,6 +5685,7 @@ void tx_on(int trigger)
 	}
 
 	tx_start_time = millis();
+	last_drive = field_int("DRIVE");
 	sound_reset(1);
 }
 
