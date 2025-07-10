@@ -67,6 +67,7 @@ install: adduser
 	install -m 644 --owner=$(OWNER) --group=$(OWNER) data/default_settings.ini $(DESTDIR)/$(STATEDIR)
 	install -d $(DESTDIR)/$(PREFIX)/lib/systemd/system/
 	install -m 644 systemd/zbitxd.service $(DESTDIR)/$(PREFIX)/lib/systemd/system
+	ln -sf /var/lib/zbitxd/grids.txt /usr/local/share/zbitxd/web/grids.txt
 ifeq ("$(wildcard $(DESTDIR)/$(STATEDIR)/sbitx.db)","")
 	$(shell sqlite3 $(DESTDIR)/$(STATEDIR)/sbitx.db < data/create_db.sql)
 endif
