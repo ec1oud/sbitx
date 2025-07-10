@@ -7787,11 +7787,6 @@ void do_control_action(char *cmd)
 	{
 		on_wf_call_button_click(NULL, NULL);
 	}
-
-	else if (!strcmp(request, "LOG"))
-	{
-		logbook_list_open();
-	}
 	else if (!strncmp(request, "BW ", 3))
 	{
 		int bw = atoi(request + 3);
