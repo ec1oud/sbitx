@@ -4786,6 +4786,8 @@ static void stop(int sig)
 
 int main(int argc, char *argv[])
 {
+	setvbuf(stdout, NULL, _IONBF, 0);
+
 	// Install our signal handlers
 	if(signal(SIGTERM, stop) == SIG_ERR)
 	{
