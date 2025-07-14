@@ -3,8 +3,8 @@ SOURCES = $(wildcard src/*.c)
 OBJECTS = $(SOURCES:.c=.o)
 FFTOBJ = ft8_lib/.build/fft/kiss_fft.o ft8_lib/.build/fft/kiss_fftr.o
 HEADERS = $(wildcard src/*.h)
-CFLAGS = `pkg-config --cflags gtk+-3.0` -I.
-LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lsqlite3 -lnsl -lrt -lssl -lcrypto ft8_lib/libft8.a `pkg-config --libs gtk+-3.0`
+CFLAGS = -I.
+LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lsqlite3 -lnsl -lrt -lssl -lcrypto ft8_lib/libft8.a
 ifdef SBITX_DEBUG
 CFLAGS += -ggdb3 -fsanitize=address
 LIBS += -fsanitize=address -static-libasan
