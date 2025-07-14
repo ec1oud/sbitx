@@ -129,11 +129,6 @@ int zero_beat_min_magnitude = 0;
 #define CONFIG_DEFAULT 0x6127 // Default INA260 configuration: Continuous mode, averages, etc.
 float voltage = 0.0f, current = 0.0f;
 
-// mouse/touch screen state
-static int mouse_down = 0;
-static int last_mouse_x = -1;
-static int last_mouse_y = -1;
-
 // encoder state
 struct encoder
 {
@@ -162,31 +157,6 @@ void tuning_isr(void);
 #define COLOR_FIELD_SELECTED 15
 #define COLOR_TX_PITCH 16
 
-float palette[][3] = {
-	{1, 1, 1},		 // COLOR_SELECTED_TEXT
-	{0, 1, 1},		 // COLOR_TEXT
-	{0.5, 0.5, 0.5}, // COLOR_TEXT_MUTED
-	{1, 1, 0},		 // COLOR_SELECTED_BOX
-	{0, 0, 0},		 // COLOR_BACKGROUND
-	{1, 1, 0},		 // COLOR_FREQ
-	{1, 0, 1},		 // COLOR_LABEL
-	// spectrum
-	{0, 0, 0},		 // SPECTRUM_BACKGROUND
-	{0.1, 0.1, 0.1}, // SPECTRUM_GRID
-	{1, 1, 0},		 // SPECTRUM_PLOT
-	{0.2, 0.2, 0.2}, // SPECTRUM_NEEDLE
-	{0.5, 0.5, 0.5}, // COLOR_CONTROL_BOX
-	{0.2, 0.2, 0.2}, // SPECTRUM_BANDWIDTH
-	{0, 1, 0},		 // COLOR_RX__PITCH
-	{0.1, 0.1, 0.2}, // SELECTED_LINE
-	{0.1, 0.1, 0.2}, // COLOR_FIELD_SELECTED
-	{1, 0, 0},		 // COLOR_TX_PITCH
-};
-
-char *ui_font = "Sans";
-int field_font_size = 12;
-int screen_width = 800, screen_height = 480;
-
 // we just use a look-up table to define the fonts used
 // the struct field indexes into this table
 struct font_style
@@ -198,8 +168,6 @@ struct font_style
 	int weight;
 	int type;
 };
-
-unsigned int key_modifier = 0;
 
 struct encoder enc_a, enc_b;
 
@@ -231,9 +199,6 @@ struct console_line
 };
 static struct console_line console_stream[MAX_CONSOLE_LINES];
 int console_current_line = 0;
-int console_selected_line = -1;
-char console_selected_callsign[12];
-int console_selected_time = -1;
 time_t console_current_time = 0;
 
 int update_logs = 0;
@@ -341,7 +306,6 @@ static struct field *f_last_text = NULL;
 // variables to power up and down the tx
 
 static int in_tx = TX_OFF;
-static int key_down = 0;
 static int tx_start_time = 0;
 
 static int *tx_mod_buff = NULL;
@@ -512,7 +476,6 @@ struct field main_controls[] = {
 	{"#enter_qso", NULL, 290, 50, 40, 40, "SAVE", 1, "", FIELD_BUTTON,
 	 "", 0, 0, 0, COMMON_CONTROL},
 	{"#wipe", NULL, 330, 50, 40, 40, "WIPE", 1, "", FIELD_BUTTON,  "", 0, 0, 0, COMMON_CONTROL},
-	{"#mfqrz", NULL, 370, 50, 40, 40, "QRZ", 1, "", FIELD_BUTTON,  "", 0, 0, 0, COMMON_CONTROL},
 	{"#logbook", NULL, 410, 50, 40, 40, "LOG", 1, "", FIELD_BUTTON,  "", 0, 0, 0, COMMON_CONTROL},
 	{"#text_in", do_text, 5, 70, 285, 20, "TEXT", 70, "text box", FIELD_TEXT,
 	 "nothing valuable", 0, 128, 0, COMMON_CONTROL},
@@ -842,10 +805,6 @@ struct field *get_field(const char *cmd);
 void update_field(struct field *f);
 void tx_on();
 void tx_off();
-
-// #define MAX_CONSOLE_LINES 1000
-// char *console_lines[MAX_CONSOLE_LINES];
-int last_log = 0;
 
 struct field *get_field(const char *cmd)
 {
@@ -1543,10 +1502,7 @@ static int user_settings_handler(void *user, const char *section,
 	return 1;
 }
 
-
-/* rendering of the fields */
-
-// mod disiplay holds the tx modulation time domain envelope
+// mod_display holds the tx modulation time domain envelope
 // even values are the maximum and the even values are minimum
 
 #define MOD_MAX 800
@@ -1635,72 +1591,11 @@ void init_waterfall()
 	}
 }
 
-void update_spectrum_history(int *current_spectrum, int n_bins)
-{
-	// Add the current spectrum data to the history buffer
-	memcpy(spectrum_history[current_frame_index], current_spectrum, n_bins * sizeof(int));
-
-	// Advance to the next frame index, wrapping around if needed
-	current_frame_index = (current_frame_index + 1) % scope_avg;
-}
-
-void compute_time_based_average(int *averaged_spectrum, int n_bins)
-{
-	memset(averaged_spectrum, 0, n_bins * sizeof(int));
-
-	// Sum the values from all frames in the history
-	for (int frame = 0; frame < scope_avg; frame++)
-	{
-		for (int bin = 0; bin < n_bins; bin++)
-		{
-			averaged_spectrum[bin] += spectrum_history[frame][bin];
-		}
-	}
-
-	// Compute the average and the minimum
-	sp_baseline = averaged_spectrum[0];
-	for (int bin = 0; bin < n_bins; bin++)
-	{
-		averaged_spectrum[bin] /= scope_avg;
-		// Store the lowest value for the avg
-		if ((bin == 0) || (sp_baseline > averaged_spectrum[bin]))
-			sp_baseline = averaged_spectrum[bin];
-	}
-}
-
-void field_move(char *field_label, int x, int y, int width, int height)
-{
-	struct field *f = get_field_by_label(field_label);
-	if (!f)
-		return;
-	f->x = x;
-	f->y = y;
-
-	f->width = width;
-	f->height = height;
-	update_field(f);
-	if (!strcmp(field_label, "WATERFALL"))
-		init_waterfall();
-}
-
 void update_field(struct field *f){
 	if (f->y >= 0)
 		f->is_dirty = 1;
 	f->update_remote = 1;
 	f->updated_at = millis();
-}
-
-static void hover_field(struct field *f)
-{
-	struct field *prev_hover = f_hover;
-	if (f)
-	{
-		// set f_hover to none to remove the outline
-		f_hover = NULL;
-		update_field(prev_hover);
-	}
-	f_hover = f;
-	update_field(f);
 }
 
 // respond to a UI request to change the field value
@@ -2364,6 +2259,7 @@ int do_bandwidth(struct field *f, int event, int a, int b, int c){
 }
 
 static char tune_tx_saved_mode[100]={0};
+
 int do_tune_tx(struct field *f, int event, int a, int b, int c){
 	if(event == FIELD_EDIT){
 		printf("tune_tx : %s\n", f->value);
@@ -2563,25 +2459,6 @@ int do_toggle_option(struct field *f, int event, int a, int b, int c)
 		//~ return 1;
 	//~ }
 	return 0;
-}
-
-void open_url(char *url)
-{
-	char temp_line[200];
-
-	sprintf(temp_line, "chromium-browser --log-leve=3 "
-					   "--enable-features=OverlayScrollbar %s"
-					   "  >/dev/null 2> /dev/null &",
-			url);
-	execute_app(temp_line);
-}
-
-void qrz(const char *callsign)
-{
-	char url[1000];
-
-	sprintf(url, "https://qrz.com/DB/%s &", callsign);
-	open_url(url);
 }
 
 int do_macro(struct field *f, int event, int a, int b, int c){
@@ -2945,22 +2822,6 @@ void tx_off()
 	sound_input(0); // it is a low overhead call, might as well be sure
 }
 
-static int layout_handler(void *user, const char *section,
-						  const char *name, const char *value)
-{
-	// the section is the field's name
-
-	// printf("setting %s:%s to %d\n", section, name, atoi(value));
-	struct field *f = get_field(section);
-	if (!strcmp(name, "x"))
-		f->x = atoi(value);
-	else if (!strcmp(name, "y"))
-		f->y = atoi(value);
-	else if (!strcmp(name, "width"))
-		f->width = atoi(value);
-	else if (!strcmp(name, "height"))
-		f->height = atoi(value);
-}
 void set_ui(int id)
 { // Modified to include the EQ layout in the rotation
 	struct field *f = get_field("#kbd_q");
@@ -3009,46 +2870,6 @@ void set_ui(int id)
 	}
 
 	current_layout = id;
-}
-
-int static cw_keydown = 0;
-int static cw_hold_until = 0;
-int static cw_hold_duration = 150;
-
-static void cw_key(int state)
-{
-	char response[100];
-	if (state == 1 && cw_keydown == 0)
-	{
-		sdr_request("key=down", response);
-		cw_keydown = 1;
-	}
-	else if (state == 0 && cw_keydown == 1)
-	{
-		cw_keydown = 0;
-	}
-	// printf("cw key = %d\n", cw_keydown);
-}
-
-static int control_down = 0;
-
-/*
-Turns out (after two days of debugging) that GTK is not thread-safe and
-we cannot invalidate the spectrum from another thread .
-This redraw is called from another thread. Hence, we set a flag here
-that is read by a timer tick from the main UI thread and the window
-is posted a redraw signal that in turn triggers the redraw_all routine.
-Don't ask me, I only work around here.
-*/
-void redraw()
-{
-	struct field *f;
-	f = get_field("#console");
-	f->is_dirty = 1;
-	f->updated_at = millis();
-	f = get_field("#text_in");
-	f->is_dirty = 1;
-	f->updated_at = millis();
 }
 
 /* hardware specific routines */
@@ -3252,22 +3073,6 @@ void tuning_isr(void)
 		tuning_ticks--;
 }
 
-void oled_toggle_band()
-{
-	unsigned int freq_now = field_int("FREQ");
-	// choose the next band
-	int band_now = 1;
-	for (int i = 0; i < sizeof(band_stack) / sizeof(struct band); i++)
-	{
-		if (band_stack[i].start <= freq_now && freq_now <= band_stack[i].stop)
-			band_now = i;
-	}
-	if (band_now == (sizeof(band_stack) / sizeof(struct band)) - 1)
-		change_band("80M");
-	else
-		change_band(band_stack[band_now + 1].name);
-}
-
 void hw_init()
 {
 	wiringPiSetup();
@@ -3330,17 +3135,6 @@ int get_cw_tx_pitch()
 	return atoi(f->value);
 }
 
-int get_data_delay()
-{
-	return data_delay;
-}
-
-int get_wpm()
-{
-	struct field *f = get_field("#tx_wpm");
-	return atoi(f->value);
-}
-
 long get_freq()
 {
 	return atol(get_field("r1:freq")->value);
@@ -3387,13 +3181,6 @@ int get_default_passband_bw()
 		return 3000;
 	}
 }
-void bin_dump(int length, uint8_t *data)
-{
-	printf("i2c: ");
-	for (int i = 0; i < length; i++)
-		printf("%x ", data[i]);
-	printf("\n");
-}
 
 int web_get_console(char *buff, int max)
 {
@@ -3415,7 +3202,6 @@ int web_get_console(char *buff, int max)
 
 void web_get_spectrum(char *buff)
 {
-
 	int n_bins = (int)((1.0 * spectrum_span) / 46.875);
 	// the center frequency is at the center of the lower sideband,
 	// i.e, three-fourth way up the bins.
@@ -3614,11 +3400,6 @@ void handleButton2Press()
 		if (buttonPressedSW2)
 		{
 			buttonPressedSW2 = 0;
-			if (difftime(time(NULL), buttonPressTimeSW2) < 1)
-			{
-				// Short press detected - Invoke oled_toggle_band()
-				oled_toggle_band();
-			}
 		}
 	}
 }
@@ -3948,22 +3729,9 @@ bool ui_tick(){
 
 		handleButton1Press(); // Call the SW1 handler -W2JON
 		handleButton2Press(); // Call the SW2 handler -W2JON
-		// if (digitalRead(ENC2_SW) == 0)
-		// oled_toggle_band();
 
 		if (record_start)
 			update_field(get_field("#record"));
-
-		// alternate character from the softkeyboard upon long press
-		if (f_focus && focus_since + 500 < millis() && !strncmp(f_focus->cmd, "#kbd_", 5) && mouse_down)
-		{
-			// emit the symbol
-			struct field *f_text = f_focus; // get_field("#text_in");
-			// replace the previous character with the shifted one
-			edit_field(f_text, MIN_KEY_BACKSPACE);
-			edit_field(f_text, f_focus->label[0]);
-			focus_since = millis();
-		}
 
 		// check if low and high settings are stepping on each other
 		char new_value[20];
@@ -4382,10 +4150,6 @@ void do_control_action(char *cmd)
 	{
 		tx_on(TX_SOFT);
 	}
-	else if (!strcmp(request, "WEB"))
-	{
-		open_url("http://127.0.0.1:8080");
-	}
 	else if (!strcmp(request, "RX"))
 	{
 		tx_off();
@@ -4533,10 +4297,6 @@ void do_control_action(char *cmd)
 		if (record_start != 0)
 			write_console(STYLE_LOG, "Recording stopped\n");
 		record_start = 0;
-	}
-	else if (!strcmp(request, "QRZ") && strlen(field_str("CALL")) > 0)
-	{
-		qrz(field_str("CALL"));
 	}
 	else
 	{
@@ -4888,13 +4648,6 @@ void cmd_exec(char *cmd)
 		save_user_settings(1);
 		exit(0);
 	}
-	else if (!strcmp(exec, "qrz"))
-	{
-		if (strlen(args))
-			qrz(args);
-		else
-			write_console(STYLE_LOG, "/qrz [callsign]\n");
-	}
 	else if (!strcmp(exec, "mode") || !strcmp(exec, "m") || !strcmp(exec, "MODE"))
 	{
 		set_radio_mode(args);
@@ -5027,28 +4780,11 @@ void cmd_exec(char *cmd)
 	save_user_settings(0);
 }
 
-// From https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
-void ensure_single_instance()
-{
-	int pid_file = open("/tmp/sbitx.pid", O_CREAT | O_RDWR, 0666);
-	int rc = flock(pid_file, LOCK_EX | LOCK_NB);
-	if (rc)
-	{
-		if (EWOULDBLOCK == errno)
-		{
-			printf("Another instance of sbitx is already running\n");
-			exit(0);
-		}
-	}
-}
-
 int main(int argc, char *argv[])
 {
 
 	puts(VER_STR);
 	active_layout = main_controls;
-
-	// ensure_single_instance();
 
 	// unlink any pending ft8 transmission
 	unlink("/home/pi/sbitx/ft8tx_float.raw");
@@ -5222,9 +4958,6 @@ int main(int argc, char *argv[])
 
 // Function to clean up resources when the application exits
 void cleanup_on_exit() {
-	// Close the frequency keypad if it's running
-	system("/home/pi/sbitx/src/cleanup_keypad.sh");
-
 	// Add any other cleanup tasks here
 	printf("Cleaning up resources before exit\n");
 }
