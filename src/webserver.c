@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include "dynamic_content.h"
+#include "configure.h"
 
 // Function declaration for S-meter
 extern int calculate_s_meter(struct rx *r, double rx_gain);
@@ -49,8 +50,8 @@ static vnc_proxy_t vnc_proxies[MAX_VNC_PROXIES] = {0};
 static const char *s_http_addr = "0.0.0.0:8080";  // Plain address without protocol
 static const char *s_https_addr = "0.0.0.0:8443";  // Plain address without protocol
 
-static const char *s_ssl_cert_path = "/home/pi/sbitx/ssl/cert.pem";
-static const char *s_ssl_key_path = "/home/pi/sbitx/ssl/key.pem";
+static const char *s_ssl_cert_path = STATEDIR "/ssl/cert.pem";
+static const char *s_ssl_key_path = STATEDIR "/ssl/key.pem";
 
 // Global buffers for TLS certificate and key to prevent memory issues
 static char *g_cert_buf = NULL;
@@ -58,7 +59,7 @@ static char *g_key_buf = NULL;
 static size_t g_cert_len = 0;
 static size_t g_key_len = 0;
 
-static char s_web_root[1000];
+static const char *s_web_root = SHAREDIR "/web";
 static char session_cookie[100];
 static int active_websocket_connections = 0; // Counter for active WebSocket connections
 static int quit_webserver = 0; // Flag to signal webserver thread to stop
@@ -139,7 +140,7 @@ static void web_respond(struct mg_connection *c, char *message){
 
 static void get_console(struct mg_connection *c){
 	char buff[2100];
-	
+
 	int n = web_get_console(buff, 2000);
 	if (!n)
 		return;
@@ -153,7 +154,7 @@ static void get_updates(struct mg_connection *c, int all){
 
 	get_console(c);
 
-	// Send S-meter value 
+	// Send S-meter value
 	struct rx *current_rx = rx_list;
 	double rx_gain = (double)get_rx_gain();
 	int s_meter_value = calculate_s_meter(current_rx, rx_gain);
@@ -168,12 +169,12 @@ static void get_updates(struct mg_connection *c, int all){
 		sprintf(buff, "ZEROBEAT %d", zerobeat_value);
 		mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT);
 	}
-	
+
 	// Send voltage and current readings if INA260 is equipped
 	if (has_ina260 == 1) {
 		sprintf(buff, "VOLTAGE %.2f", voltage);
 		mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT);
-		
+
 		sprintf(buff, "CURRENT %.2f", current);
 		mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT);
 	}
@@ -185,7 +186,7 @@ static void get_updates(struct mg_connection *c, int all){
 			return;
 	//send the status anyway
 		if (all || update )
-			mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT); 
+			mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT);
 		i++;
 	}
 }
@@ -197,19 +198,19 @@ static void do_login(struct mg_connection *c, char *key){
 
 	//look for key only on non-local ip addresses
 	// Check if IP is 127.0.0.1 (localhost)
-	if ((!key || strcmp(passkey, key)) && 
+	if ((!key || strcmp(passkey, key)) &&
 	    !(c->rem.ip[0] == 127 && c->rem.ip[1] == 0 && c->rem.ip[2] == 0 && c->rem.ip[3] == 1)){
 		web_respond(c, "login error");
 		c->is_draining = 1;
 		printf("passkey didn't match. Closing socket\n");
 		return;
 	}
-	
+
 	hd_createGridList(); // oz7bx: Make the list up to date at the beginning of a session
 	sprintf(session_cookie, "%x", rand());
 	char response[100];
 	sprintf(response, "login %s", session_cookie);
-	web_respond(c, response);	
+	web_respond(c, response);
 	get_updates(c, 1);
 }
 
@@ -228,7 +229,7 @@ static void get_audio(struct mg_connection *c){
 	mg_ws_send(c, buff, strlen(buff), WEBSOCKET_OP_TEXT);
 	get_updates(c, 0);
 
-	int count = remote_audio_output(remote_samples);		
+	int count = remote_audio_output(remote_samples);
 	if (count > 0)
 		mg_ws_send(c, remote_samples, count * sizeof(int16_t), WEBSOCKET_OP_BINARY);
 }
@@ -247,7 +248,7 @@ static void get_logs(struct mg_connection *c, char *args){
 		return;
 	while(fgets(row, sizeof(row), pf)){
 		sprintf(row_response, "QSO %s", row);
-		web_respond(c, row_response); 
+		web_respond(c, row_response);
 	}
 	fclose(pf);
 }
@@ -279,7 +280,7 @@ typedef struct {
 static void handle_vnc_proxy(struct mg_connection *c, int ev, void *ev_data) {
     // Get proxy data from connection's user_data
     vnc_proxy_t *proxy = (vnc_proxy_t *)c->fn_data;
-    
+
     if (ev == MG_EV_READ) {
         // Forward data from VNC server to WebSocket client
         if (proxy && proxy->client && !proxy->client->is_closing) {
@@ -294,11 +295,11 @@ static void handle_vnc_proxy(struct mg_connection *c, int ev, void *ev_data) {
             if (webserver_debug_enabled) {
                 printf("VNC server connection closed\n");
             }
-            
+
             // Mark this proxy as inactive
             proxy->active = 0;
             proxy->server = NULL;
-            
+
             // Close the client connection if it's still open
             if (proxy->client && !proxy->client->is_closing) {
                 proxy->client->is_closing = 1;
@@ -322,25 +323,25 @@ static void create_vnc_proxy(struct mg_connection *c, int vnc_port) {
             break;
         }
     }
-    
+
     if (proxy_index == -1) {
         // No available proxy slots
         if (webserver_debug_enabled) {
             printf("No available VNC proxy slots\n");
         }
-        mg_http_reply(c, 500, "Content-Type: application/json\r\n", 
+        mg_http_reply(c, 500, "Content-Type: application/json\r\n",
                      "{\"status\":\"error\",\"message\":\"No available VNC proxy slots\"}\n");
         return;
     }
-    
+
     // Create a connection to the VNC server
     char addr[32];
     snprintf(addr, sizeof(addr), "127.0.0.1:%d", vnc_port);
-    
+
     if (webserver_debug_enabled) {
         printf("Creating VNC proxy to %s\n", addr);
     }
-    
+
     // Connect to the VNC server
     struct mg_connection *server_conn = mg_connect(c->mgr, addr, handle_vnc_proxy, &vnc_proxies[proxy_index]);
     // Note: The connection's fn_data will be set to &vnc_proxies[proxy_index] by mg_connect
@@ -349,19 +350,19 @@ static void create_vnc_proxy(struct mg_connection *c, int vnc_port) {
         if (webserver_debug_enabled) {
             printf("Failed to connect to VNC server at %s\n", addr);
         }
-        mg_http_reply(c, 500, "Content-Type: application/json\r\n", 
+        mg_http_reply(c, 500, "Content-Type: application/json\r\n",
                      "{\"status\":\"error\",\"message\":\"Failed to connect to VNC server\"}\n");
         return;
     }
-    
+
     // Store the connections in the proxy structure
     vnc_proxies[proxy_index].client = c;
     vnc_proxies[proxy_index].server = server_conn;
     vnc_proxies[proxy_index].vnc_port = vnc_port;
     vnc_proxies[proxy_index].active = 1;
-    
+
     // Respond with success
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", 
+    mg_http_reply(c, 200, "Content-Type: application/json\r\n",
                  "{\"status\":\"success\",\"message\":\"VNC proxy created\"}\n");
 }
 
@@ -386,48 +387,48 @@ static void execute_shell_script(struct mg_connection *c, const char *script_nam
   FILE *script_output;
   size_t bytes_read = 0;
   char buffer[1024];
-  
+
   // Validate script name to prevent command injection
-  if (!script_name || strlen(script_name) == 0 || 
-      strchr(script_name, '/') != NULL || 
-      strchr(script_name, '\\') != NULL || 
-      strchr(script_name, '"') != NULL || 
-      strchr(script_name, '\'') != NULL || 
-      strchr(script_name, ';') != NULL || 
-      strchr(script_name, '|') != NULL || 
+  if (!script_name || strlen(script_name) == 0 ||
+      strchr(script_name, '/') != NULL ||
+      strchr(script_name, '\\') != NULL ||
+      strchr(script_name, '"') != NULL ||
+      strchr(script_name, '\'') != NULL ||
+      strchr(script_name, ';') != NULL ||
+      strchr(script_name, '|') != NULL ||
       strchr(script_name, '&') != NULL) {
-    mg_http_reply(c, 400, "Content-Type: application/json\r\n", 
+    mg_http_reply(c, 400, "Content-Type: application/json\r\n",
                  "{\"status\":\"error\",\"message\":\"Invalid script name\"}\n");
     return;
   }
-  
+
   // Check if script exists and has .sh extension
   snprintf(script_path, sizeof(script_path), "%s/scripts/%s", s_web_root, script_name);
-  
+
   if (access(script_path, F_OK) != 0 || !strstr(script_name, ".sh")) {
-    mg_http_reply(c, 404, "Content-Type: application/json\r\n", 
+    mg_http_reply(c, 404, "Content-Type: application/json\r\n",
                  "{\"status\":\"error\",\"message\":\"Script not found\"}\n");
     return;
   }
-  
+
   // Execute the script with nohup to allow it to continue running after the request completes
   //snprintf(command, sizeof(command), "nohup sudo /bin/bash %s > /dev/null 2>&1 &", script_path);
   // Run as pi and not root
-  snprintf(command, sizeof(command), "nohup /bin/bash %s > /dev/null 2>&1 &", script_path); 
+  snprintf(command, sizeof(command), "nohup /bin/bash %s > /dev/null 2>&1 &", script_path);
 
   if (webserver_debug_enabled) {
     printf("Executing script: %s\n", command);
   }
-  
+
   // Execute the command
   int result = system(command);
-  
+
   if (result == 0) {
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", 
-                 "{\"status\":\"success\",\"message\":\"Executing script: %s\"}\n", 
+    mg_http_reply(c, 200, "Content-Type: application/json\r\n",
+                 "{\"status\":\"success\",\"message\":\"Executing script: %s\"}\n",
                  script_name);
   } else {
-    mg_http_reply(c, 500, "Content-Type: application/json\r\n", 
+    mg_http_reply(c, 500, "Content-Type: application/json\r\n",
                  "{\"status\":\"error\",\"message\":\"Failed to execute script\"}\n");
   }
 }
@@ -443,16 +444,16 @@ static void web_despatcher(struct mg_connection *c, struct mg_ws_message *wm){
             return;
         }
     }
-    
+
     // Check if this is binary data (browser microphone audio)
-	if (wm->data.len > 0 && wm->flags & 2) { 
+	if (wm->data.len > 0 && wm->flags & 2) {
 		// Binary data flag
 		// Process browser microphone data
 		// Always accept browser mic data - the browser will only send when in TX mode
 		// and the browser_mic_input function will handle the data appropriately
 		int16_t *audio_samples = (int16_t *)wm->data.buf;
 		int sample_count = wm->data.len / sizeof(int16_t);
-		
+
 		// Pass the browser microphone data to the audio processing chain
 		browser_mic_input(audio_samples, sample_count);
 		return;
@@ -462,7 +463,7 @@ static void web_despatcher(struct mg_connection *c, struct mg_ws_message *wm){
 	if (wm->data.len > 99)
 		return;
 
-	strncpy(request, wm->data.buf, wm->data.len);	
+	strncpy(request, wm->data.buf, wm->data.len);
 	request[wm->data.len] = 0;
 	//handle the 'no-cookie' situation
 	char *cookie = NULL;
@@ -524,7 +525,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
 
   if (ev == MG_EV_ACCEPT) {
     // Log when a connection is accepted
-    char addr[INET6_ADDRSTRLEN]; 
+    char addr[INET6_ADDRSTRLEN];
     int af = c->rem.is_ip6 ? AF_INET6 : AF_INET;
     uint16_t local_port = mg_ntohs(c->loc.port);
     inet_ntop(af, c->rem.ip, addr, sizeof(addr));
@@ -555,7 +556,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         inet_ntop(af, c->rem.ip, addr, sizeof(addr));
         printf("MG_EV_CLOSE: Conn from %s\n", addr);
     }
-    
+
     // Check if this was a WebSocket connection
     if (c->is_websocket) {
       // Remove from our connection tracking array
@@ -566,14 +567,14 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           break;
         }
       }
-      
+
       active_websocket_connections--;
       if (active_websocket_connections < 0) active_websocket_connections = 0; // Safety check
-      
+
       if (webserver_debug_enabled) {
         printf("WebSocket connection closed, active connections: %d\n", active_websocket_connections);
       }
-      
+
       // Just update the connection status - the regular UI update cycle will handle the transition
       if (active_websocket_connections == 0) {
         // Send a simple refresh message
@@ -583,8 +584,8 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
   } else if (ev == MG_EV_TLS_HS) {
     // Log TLS Handshake result only if debugging
     if (webserver_debug_enabled) {
-        printf("MG_EV_TLS_HS: Handshake %s. TLS established: %d, Error: %s\n", 
-           ev_data == NULL ? "SUCCESS" : "FAILED", 
+        printf("MG_EV_TLS_HS: Handshake %s. TLS established: %d, Error: %s\n",
+           ev_data == NULL ? "SUCCESS" : "FAILED",
            c->is_tls,
            ev_data ? (char *)ev_data : "(none)");
     }
@@ -596,30 +597,30 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         // Connection is from localhost, disable redirect
         redirect_http_to_https = 0;
     } else {
-        // Connection is not from localhost, enable redirect 
+        // Connection is not from localhost, enable redirect
         redirect_http_to_https = 1;
     }
     // Check for HTTP->HTTPS redirect *before* other handling
     if (redirect_http_to_https && !c->is_tls) {
       // Construct the target URL: https://sbitx.local:8443 + original URI
       char https_url[2048];
-      snprintf(https_url, sizeof(https_url), "https://sbitx.local:8443%.*s", 
+      snprintf(https_url, sizeof(https_url), "https://sbitx.local:8443%.*s",
                (int)hm->uri.len, hm->uri.buf);
-      
+
       // Construct the Location header string, including Content-Length: 0
-      char redir_headers[2100]; 
+      char redir_headers[2100];
       snprintf(redir_headers, sizeof(redir_headers), "Location: %s\r\nContent-Length: 0\r\n", https_url);
 
       // Send 302 redirect using the extra_headers parameter (3rd arg), empty body format (4th arg)
-      mg_http_reply(c, 302, redir_headers, ""); 
-            
+      mg_http_reply(c, 302, redir_headers, "");
+
       // Stop processing this request after sending the redirect
-      return; 
+      return;
     }
 
     // Log basic HTTP message receipt only if debugging (if not redirected)
     if (webserver_debug_enabled) {
-        printf("MG_EV_HTTP_MSG received on %s connection for URI %.*s\n", 
+        printf("MG_EV_HTTP_MSG received on %s connection for URI %.*s\n",
                c->is_tls ? "HTTPS" : "HTTP", (int)hm->uri.len, hm->uri.buf);
     }
 
@@ -635,30 +636,30 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
       // Check if this is a PHP file
       char uri[256];
       mg_url_decode(hm->uri.buf, hm->uri.len, uri, sizeof(uri), 0);
-      
+
       // Check if the URI ends with .php
       size_t uri_len = strlen(uri);
       if (uri_len > 4 && strcmp(uri + uri_len - 4, ".php") == 0) {
         // Handle PHP files in cgi-bin directory
         char file_path[1024];
         snprintf(file_path, sizeof(file_path), "%s%s", s_web_root, uri);
-      
+
         if (webserver_debug_enabled) {
           printf("PHP request: %s\n", file_path);
         }
-        
+
         // Execute PHP directly
         char command[1500];
         snprintf(command, sizeof(command),
                 "cd %s && php -f %s",
                 s_web_root,
                 file_path);
-        
+
         if (webserver_debug_enabled) {
           printf("PHP command: %s\n", file_path);
           printf("Running command: %s\n", command);
         }
-        
+
         // Execute the command and capture output
         FILE *php_output = popen(command, "r");
         if (php_output) {
@@ -666,7 +667,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           size_t bytes_read = 0;
           size_t chunk_size;
           char buffer[1024];
-          
+
           // Read all output
           while ((chunk_size = fread(buffer, 1, sizeof(buffer) - 1, php_output)) > 0) {
             if (bytes_read + chunk_size < sizeof(output) - 1) {
@@ -678,11 +679,11 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           }
           output[bytes_read] = '\0';
           pclose(php_output);
-          
+
           if (webserver_debug_enabled) {
             printf("PHP output (%zu bytes): %s\n", bytes_read, output);
           }
-          
+
           // Send the response
           mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", output);
         } else {
@@ -699,16 +700,16 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         // Handle VNC proxy request
         char vnc_port_str[16] = {0};
         int vnc_port = 5901;  // Default VNC port
-        
+
         // Get VNC port from query parameter
         mg_http_get_var(&hm->query, "vnc_port", vnc_port_str, sizeof(vnc_port_str));
         if (vnc_port_str[0] != '\0') {
             vnc_port = atoi(vnc_port_str);
         }
-        
+
         if (vnc_port <= 0 || vnc_port > 65535) {
             // Invalid port number
-            mg_http_reply(c, 400, "Content-Type: application/json\r\n", 
+            mg_http_reply(c, 400, "Content-Type: application/json\r\n",
                          "{\"status\":\"error\",\"message\":\"Invalid VNC port\"}\n");
         } else {
             // Create a new VNC proxy
@@ -721,7 +722,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         // Handle script execution request
         char script_name[256] = {0};
         struct mg_str *script_param = mg_http_get_header(hm, "X-Script-Name");
-        
+
         // First try to get script name from header
         if (script_param != NULL && script_param->len > 0) {
           // Copy the header value to our buffer
@@ -733,16 +734,16 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           // Try to get script name from query parameter
           mg_http_get_var(&hm->query, "script", script_name, sizeof(script_name));
         }
-        
+
         // If still no script name, try to get it from form data (POST)
         if (script_name[0] == '\0' && hm->body.len > 0) {
           mg_http_get_var(&hm->body, "script", script_name, sizeof(script_name));
         }
-        
+
         if (script_name[0] != '\0') {
           execute_shell_script(c, script_name);
         } else {
-          mg_http_reply(c, 400, "Content-Type: application/json\r\n", 
+          mg_http_reply(c, 400, "Content-Type: application/json\r\n",
                        "{\"status\":\"error\",\"message\":\"No script specified\"}\n");
         }
       } else if (mg_match(hm->uri, mg_str("/app-list"), NULL)) {
@@ -751,42 +752,42 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
       char cmd[512];
       FILE *fp;
       int first_app = 1;
-      
+
       // Directory containing start scripts
       char scripts_dir[256];
       snprintf(scripts_dir, sizeof(scripts_dir), "%s/scripts", s_web_root);
-      
+
       // Command to list all start_*.sh files
       snprintf(cmd, sizeof(cmd), "find %s -name 'start_*.sh' -type f -printf '%%f\n'", scripts_dir);
-      
+
       fp = popen(cmd, "r");
       if (fp != NULL) {
         char script_name[128];
-        
+
         // Process each start script
         while (fgets(script_name, sizeof(script_name), fp) != NULL) {
           // Remove newline character
           script_name[strcspn(script_name, "\n")] = 0;
-          
+
           // Extract app name from script name (remove 'start_' prefix and '.sh' suffix)
           char app_name[128] = "";
           if (strncmp(script_name, "start_", 6) == 0) {
             strncpy(app_name, script_name + 6, sizeof(app_name) - 1);
             app_name[strcspn(app_name, ".")] = 0; // Remove .sh extension
-            
+
             // Skip novnc_proxy as it's a helper script, not an application
             if (strcmp(app_name, "novnc_proxy") == 0) {
               continue;
             }
-            
+
             // Determine VNC port and WebSocket port for this app
             int vnc_port = 5900;  // Default port
             int ws_port = 6080;   // Default WebSocket port
-            
+
             // Try to extract port and display information from the start script
             char script_path[512];
             snprintf(script_path, sizeof(script_path), "%s/scripts/start_%s.sh", s_web_root, app_name);
-            
+
             FILE *script_file = fopen(script_path, "r");
             if (script_file != NULL) {
               char line[512];
@@ -796,13 +797,13 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                   char *port_str = strstr(line, "VNC_PORT=") + 9; // Skip "VNC_PORT="
                   vnc_port = atoi(port_str);
                 }
-                
+
                 // Look for WS_PORT=xxxx in the script
                 if (strstr(line, "WS_PORT=") != NULL) {
                   char *port_str = strstr(line, "WS_PORT=") + 8; // Skip "WS_PORT="
                   ws_port = atoi(port_str);
                 }
-                
+
                 // Look for DISPLAY_NUM=xxxx in the script (for future use)
                 if (strstr(line, "DISPLAY_NUM=") != NULL) {
                   char *display_str = strstr(line, "DISPLAY_NUM=") + 12; // Skip "DISPLAY_NUM="
@@ -812,7 +813,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
               }
               fclose(script_file);
             }
-            
+
             // Fallback to known applications if ports weren't found in the script
             // if (vnc_port == 5900 && ws_port == 6080) {
             //   if (strcmp(app_name, "wsjtx") == 0) {
@@ -838,18 +839,18 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
             //     for (int i = 0; app_name[i] != '\0'; i++) {
             //       hash = hash * 31 + app_name[i];
             //     }
-                
+
             //     // Use the hash to generate a port number in the range 5904-5999
             //     // This avoids conflicts with the known applications
             //     vnc_port = 5904 + (hash % 95); // 95 = 5999 - 5904
             //     ws_port = vnc_port + 180;      // Follow the pattern of adding 180
             //   }
             // }
-            
+
             // Look for WIDGET_LABEL in the script file
             char widget_label[128] = "";
             int found_widget_label = 0;
-            
+
             FILE *label_file = fopen(script_path, "r");
             if (label_file != NULL) {
               char line[512];
@@ -857,7 +858,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                 // Look for WIDGET_LABEL="xxxx" in the script
                 if (strstr(line, "WIDGET_LABEL=") != NULL) {
                   char *label_str = strstr(line, "WIDGET_LABEL=") + 13; // Skip "WIDGET_LABEL="
-                  
+
                   // Extract the quoted string
                   char *start = strchr(label_str, '"');
                   if (start != NULL) {
@@ -876,19 +877,19 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
               }
               fclose(label_file);
             }
-            
+
             // If no WIDGET_LABEL found, format the app name for display (capitalize first letter, replace underscores with spaces)
             char display_name[128] = "";
             if (found_widget_label) {
               strcpy(display_name, widget_label);
             } else {
               strcpy(display_name, app_name);
-              
+
               // Capitalize first letter
               if (display_name[0] != '\0') {
                 display_name[0] = toupper(display_name[0]);
               }
-              
+
               // Replace underscores with spaces
               for (int i = 0; display_name[i] != '\0'; i++) {
                   if (display_name[i] == '_') {
@@ -896,28 +897,28 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                   }
               }
             }
-            
+
             // Add comma if not the first app
             if (!first_app) {
               strcat(output, ",");
             } else {
               first_app = 0;
             }
-            
+
             // Add app details to JSON
             char app_details[512];
-            snprintf(app_details, sizeof(app_details), 
-                     "{\"id\":\"%s\",\"name\":\"%s\",\"vncPort\":%d,\"wsPort\":%d}", 
+            snprintf(app_details, sizeof(app_details),
+                     "{\"id\":\"%s\",\"name\":\"%s\",\"vncPort\":%d,\"wsPort\":%d}",
                      app_name, display_name, vnc_port, ws_port);
             strcat(output, app_details);
           }
         }
         pclose(fp);
       }
-      
+
       // Close JSON array
       strcat(output, "]");
-      
+
       // Send the response
       mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", output);
       } else if (mg_match(hm->uri, mg_str("/app-status"), NULL)) {
@@ -926,36 +927,36 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
       char cmd[512];
       FILE *fp;
       int first_app = 1;
-      
+
       // Directory containing start scripts
       char scripts_dir[256];
       snprintf(scripts_dir, sizeof(scripts_dir), "%s/scripts", s_web_root);
-      
+
       // Command to list all start_*.sh files
       snprintf(cmd, sizeof(cmd), "find %s -name 'start_*.sh' -type f -printf '%%f\n'", scripts_dir);
-      
+
       fp = popen(cmd, "r");
       if (fp != NULL) {
         char script_name[128];
-        
+
         // Process each start script
         while (fgets(script_name, sizeof(script_name), fp) != NULL) {
           // Remove newline character
           script_name[strcspn(script_name, "\n")] = 0;
-          
+
           // Extract app name from script name (remove 'start_' prefix and '.sh' suffix)
           char app_name[128] = "";
           if (strncmp(script_name, "start_", 6) == 0) {
             strncpy(app_name, script_name + 6, sizeof(app_name) - 1);
             app_name[strcspn(app_name, ".")] = 0; // Remove .sh extension
-            
+
             // Skip novnc_proxy as it's a helper script, not an application
             if (strcmp(app_name, "novnc_proxy") == 0) {
               continue;
             }
-            
+
             int app_running = 0;
-            
+
             // Special case for main_vnc which needs a different check
             if (strcmp(app_name, "main_vnc") == 0) {
               // Check Main VNC using ps and grep
@@ -967,7 +968,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                 }
                 pclose(app_fp);
               }
-              
+
               // Double check with the PID file
               app_fp = popen("[ -f /tmp/main_x11vnc.pid ] && kill -0 $(cat /tmp/main_x11vnc.pid) 2>/dev/null && echo 1 || echo 0", "r");
               if (app_fp != NULL) {
@@ -985,13 +986,13 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
               // Extract the actual process name from app_name (e.g., wsjtx, fldigi, js8call)
               char process_name[128];
               strcpy(process_name, app_name);
-              
+
               // Check if the application is running
               char check_cmd[256];
               FILE *app_fp;
               char result[10];
               app_running = 0;  // Start with not running
-              
+
               // Check if the PID file exists and process is running
               snprintf(check_cmd, sizeof(check_cmd), "[ -f /tmp/%s_app.pid ] && ps -p $(cat /tmp/%s_app.pid) > /dev/null 2>&1 && echo 1 || echo 0", app_name, app_name);
               app_fp = popen(check_cmd, "r");
@@ -1002,14 +1003,14 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
                   pclose(app_fp);
               }
             }
-            
+
             // Add comma if not the first app
             if (!first_app) {
               strcat(output, ",");
             } else {
               first_app = 0;
             }
-            
+
             // Add app status to JSON
             char app_status[256];
             snprintf(app_status, sizeof(app_status), "\"%s\":%s", app_name, app_running ? "true" : "false");
@@ -1018,27 +1019,27 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         }
         pclose(fp);
       }
-      
+
       // Close JSON object
       strcat(output, "}");
-      
+
       // Send the response
       mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", output);
-      } else if (mg_match(hm->uri, mg_str("/index.html"), NULL) || 
+      } else if (mg_match(hm->uri, mg_str("/index.html"), NULL) ||
                  mg_match(hm->uri, mg_str("/"), NULL)) {
         // This is a request for the main index.html file
         char file_path[1024];
         snprintf(file_path, sizeof(file_path), "%s/index.html", s_web_root);
-        
+
         // Read the file content
         size_t content_size;
         char *content = read_file_content(file_path, &content_size);
-        
+
         if (content) {
           // Process the content to replace version string
           size_t new_size;
           char *processed_content = process_dynamic_content(content, content_size, &new_size);
-          
+
           if (processed_content) {
             // Send the processed content
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%.*s", (int)new_size, processed_content);
@@ -1047,7 +1048,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
             // If processing failed, serve the original content
             mg_http_reply(c, 200, "Content-Type: text/html\r\n", "%.*s", (int)content_size, content);
           }
-          
+
           free(content);
         } else {
           // If file reading failed, serve 404
@@ -1062,7 +1063,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
   } else if (ev == MG_EV_WS_MSG) {
     // Got websocket frame. Received data is wm->data
     struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
-    
+
     // Update the last active time for this connection
     for (int i = 0; i < MAX_WS_CONNECTIONS; i++) {
       if (ws_connections[i].active && ws_connections[i].conn == c) {
@@ -1070,7 +1071,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
         break;
       }
     }
-    
+
     // Handle pong messages
     if (wm->flags == WEBSOCKET_OP_PONG) {
       // Just update the timestamp, which we already did above
@@ -1087,13 +1088,13 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           break;
         }
       }
-      
+
       // If not a VNC proxy WebSocket, check if it's a browser microphone
       if (!is_vnc_ws) {
         // Process browser microphone data
         int16_t *audio_samples = (int16_t *)wm->data.buf;
         int sample_count = wm->data.len / sizeof(int16_t);
-        
+
         // Pass the browser microphone data to the audio processing chain
         browser_mic_input(audio_samples, sample_count);
       }
@@ -1104,26 +1105,26 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
   } else if (ev == MG_EV_WS_OPEN) {
     // WebSocket connection opened
     active_websocket_connections++;
-    
+
     // Add to our connection tracking array
     for (int i = 0; i < MAX_WS_CONNECTIONS; i++) {
       if (!ws_connections[i].active) {
         ws_connections[i].conn = c;
         ws_connections[i].last_active_time = mg_millis();
         ws_connections[i].active = 1;
-        
+
         // Store the client IP address
         char ip_str[50];
         // Format IP address manually using the connection's remote address (without port)
-        snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", 
+        snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d",
                  c->rem.ip[0], c->rem.ip[1], c->rem.ip[2], c->rem.ip[3]);
         strncpy(ws_connections[i].ip_addr, ip_str, sizeof(ws_connections[i].ip_addr)-1);
         ws_connections[i].ip_addr[sizeof(ws_connections[i].ip_addr)-1] = '\0'; // Ensure null termination
-        
+
         break;
       }
     }
-    
+
     if (webserver_debug_enabled) {
       printf("WebSocket connection opened, active connections: %d\n", active_websocket_connections);
     }
@@ -1135,11 +1136,11 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
 void check_websocket_connections() {
   int64_t current_time = mg_millis();
   int connections_closed = 0;
-  
+
   // Send pings every 2 seconds
   if (current_time - last_ping_time > 2000) {
     last_ping_time = current_time;
-    
+
     // Check each connection
     for (int i = 0; i < MAX_WS_CONNECTIONS; i++) {
       if (ws_connections[i].active && ws_connections[i].conn != NULL) {
@@ -1149,14 +1150,14 @@ void check_websocket_connections() {
           if (webserver_debug_enabled) {
             printf("WebSocket connection timed out and closed\n");
           }
-          
+
           // Close the connection safely
           struct mg_connection *conn = ws_connections[i].conn;
           if (conn && !conn->is_closing) {
             // Only try to send close frame if connection is still valid
             mg_ws_send(conn, "", 0, WEBSOCKET_OP_CLOSE);
           }
-          
+
           // Mark as inactive regardless of close success
           ws_connections[i].active = 0;
           ws_connections[i].conn = NULL;
@@ -1171,12 +1172,12 @@ void check_websocket_connections() {
         }
       }
     }
-    
+
     // If we closed any connections, update the counter
     if (connections_closed > 0) {
       active_websocket_connections -= connections_closed;
       if (active_websocket_connections < 0) active_websocket_connections = 0;
-      
+
       // If all connections are now closed, just update the connection status
       if (active_websocket_connections == 0) {
         // Send a simple refresh message
@@ -1189,10 +1190,10 @@ void check_websocket_connections() {
 void *webserver_thread_function(void *server){
   // Initialize global manager
   mg_mgr_init(&mgr);
-  
+
   // Note: Mongoose version may not support mg_mgr_set_option
   // We'll handle buffer issues with careful connection management instead
-  
+
   // Prepare webserver data (TLS opts and port) for event handler
   // Allocate on heap instead of stack to ensure it persists
   webserver_data_t *ws_data = (webserver_data_t *)calloc(1, sizeof(webserver_data_t));
@@ -1201,7 +1202,7 @@ void *webserver_thread_function(void *server){
     mg_mgr_free(&mgr);
     return NULL;
   }
-  
+
   uint16_t https_port_num = 0;
 
   // Parse HTTPS port from address string
@@ -1240,7 +1241,7 @@ void *webserver_thread_function(void *server){
   }
 
   // Set the user data pointer for the manager
-  mgr.userdata = ws_data; 
+  mgr.userdata = ws_data;
 
   // Create HTTP listener - this will handle both HTTP and WebSocket connections
   if (webserver_debug_enabled) {
@@ -1284,7 +1285,7 @@ void *webserver_thread_function(void *server){
   // Event loop
   while(!quit_webserver){
     mg_mgr_poll(&mgr, 100);  // Poll for 100ms
-    
+
     // Check for stale connections
     check_websocket_connections();
   }
@@ -1301,7 +1302,7 @@ void *webserver_thread_function(void *server){
       ws_connections[i].conn = NULL;
     }
   }
-  
+
   // Free resources
   free(g_cert_buf);
   free(g_key_buf);
@@ -1323,7 +1324,7 @@ int is_localhost_connection_only() {
   if (active_websocket_connections == 0) {
     return 0;
   }
-  
+
   // Check if all active connections are from localhost
   for (int i = 0; i < MAX_WS_CONNECTIONS; i++) {
     if (ws_connections[i].active) {
@@ -1333,7 +1334,7 @@ int is_localhost_connection_only() {
       }
     }
   }
-  
+
   // If we get here, all active connections are from localhost
   return 1;
 }
@@ -1344,30 +1345,30 @@ int is_localhost_connection_only() {
 int get_active_connection_ips(char *buffer, int buffer_size) {
   int count = 0;
   buffer[0] = '\0'; // Initialize empty string
-  
+
   for (int i = 0; i < MAX_WS_CONNECTIONS; i++) {
     if (ws_connections[i].active) {
       // Add comma if not the first IP
       if (count > 0) {
         strncat(buffer, ", ", buffer_size - strlen(buffer) - 1);
       }
-      
+
       // Add the IP address
       strncat(buffer, ws_connections[i].ip_addr, buffer_size - strlen(buffer) - 1);
       count++;
     }
   }
-  
+
   return count;
 }
 
 void webserver_stop(){
 	// Signal the thread to stop
 	quit_webserver = 1;
-	
+
 	// Wait for the thread to finish (optional)
 	pthread_join(webserver_thread, NULL);
-	
+
 	// Reset the flag for potential restart
 	quit_webserver = 0;
 }
@@ -1392,10 +1393,10 @@ void web_update(char *message) {
 void webserver_start(){
 	char directory[200];	//dangerous, find the MAX_PATH and replace 200 with it
 
-	//TODO:  Make a helper function for this path stuff - n1qm	
+	//TODO:  Make a helper function for this path stuff - n1qm
 	//Get symlink that points to this executables
 	int readPath = readlink("/proc/self/exe", directory, 200);
-	
+
 	//Find the last path seperator
 	int lastSep = 0;
 	for (int i=0;i < readPath;i++) {
@@ -1410,11 +1411,8 @@ void webserver_start(){
 		directory[readPath]='\0';
 	//directoryPath should now be where the sbitx binary lives
 
-	//char *path = getenv("HOME");
-	strcpy(s_web_root, directory);
-	strcat(s_web_root, "/web");
 	//printf("Dir %s\n",s_web_root);
 	//logbook_open();
- 	pthread_create( &webserver_thread, NULL, webserver_thread_function, 
+ 	pthread_create( &webserver_thread, NULL, webserver_thread_function,
 		(void*)NULL);
 }

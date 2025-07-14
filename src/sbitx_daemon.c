@@ -34,6 +34,9 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include <wiringPi.h>
 #include <wiringSerial.h>
 #include "sbitx.h"
+#include <signal.h>
+#include <systemd/sd-daemon.h>
+#include <systemd/sd-journal.h>
 #include "sdr.h"
 #include "sound.h"
 #include "sdr_ui.h"
@@ -46,7 +49,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "logbook.h"
 #include "hist_disp.h"
 #include "ntputil.h"
-#include <time.h>
+#include "configure.h"
 
 #ifndef MIN
 #define MIN(a,b) (((a) < (b)) ? (a) : (b))
@@ -1294,7 +1297,7 @@ static int mode_id(const char *mode_str){
 void save_user_settings(int forced)
 {
 	static int last_save_at = 0;
-	char file_path[PATH_MAX];
+	char const *file_path = STATEDIR "/user_settings.ini";
 
 	// attempt to save settings only if it has been 30 seconds since the
 	// last time the settings were saved
@@ -1302,9 +1305,6 @@ void save_user_settings(int forced)
 	if ((now < last_save_at + 30000 || !settings_updated) && forced == 0)
 		return;
 
-	char *path = getenv("HOME");
-	strcpy(file_path, path);
-	strcat(file_path, "/sbitx/data/user_settings.ini");
 
 	// copy the current freq settings to the currently selected vfo
 	struct field *f_freq = get_field("r1:freq");
@@ -4558,15 +4558,7 @@ void cmd_exec(char *cmd)
 	{
 		utc_set(args, 1);
 	}
-	else if (!strcmp(exec, "logbook"))
-	{
-		char fullpath[PATH_MAX];
-		char *path = getenv("HOME");
-		sprintf(fullpath, "mousepad %s/sbitx/data/logbook.txt", path);
-		execute_app(fullpath);
-	}
-	else if (!strcmp(exec, "clear"))
-	{
+	else if (!strcmp(exec, "clear")){
 		console_init();
 	}
 	else if (!strcmp(exec, "macro") || !strcmp(exec, "MACRO"))
@@ -4780,14 +4772,37 @@ void cmd_exec(char *cmd)
 	save_user_settings(0);
 }
 
+// a global variable for our journal
+sd_journal *journal;
+
+// A signal handler for stopping
+static void stop(int sig)
+{
+	fprintf(stderr, SD_NOTICE "zbitx service is stopping\n");
+	sd_notify(0, "STOPPING=1");
+	sd_journal_close(journal);
+	exit(0);
+}
+
 int main(int argc, char *argv[])
 {
+	// Install our signal handlers
+	if(signal(SIGTERM, stop) == SIG_ERR)
+	{
+		sd_notifyf(0, "STATUS=Failed to install signal handler for stopping service %s\n"
+			"ERRNO=%i",
+			strerror(errno),
+			errno);
+	}
+
+	// open the journal
+	sd_journal_open(&journal, 0);
+
+	fprintf(stderr, SD_NOTICE "zBitx service started\n");
+	sd_journal_print(LOG_NOTICE, "zBitx service started\n");
 
 	puts(VER_STR);
 	active_layout = main_controls;
-
-	// unlink any pending ft8 transmission
-	unlink("/home/pi/sbitx/ft8tx_float.raw");
 	call_wipe();
 
 	// cache some fields for fast lookup
@@ -4840,16 +4855,10 @@ int main(int argc, char *argv[])
 	set_field("r1:gain", "41");
 	set_field("r1:volume", "85");
 
-	{
-		char settings_path[PATH_MAX];
-		sprintf(settings_path, "%s/sbitx/data/user_settings.ini", getenv("HOME"));
-		if (ini_parse(settings_path, user_settings_handler, NULL) < 0)
-		{
-			printf("Unable to load ~/sbitx/data/user_settings.ini\n"
-				   "Loading default.ini instead\n");
-			sprintf(settings_path, "%s/sbitx/data/default_settings.ini", getenv("HOME"));
-			ini_parse(settings_path, user_settings_handler, NULL);
-		}
+	if (ini_parse(STATEDIR "/user_settings.ini", user_settings_handler, NULL)<0){
+		printf("Unable to load user_settings.ini\n"
+			"Loading default.ini instead\n");
+		ini_parse(STATEDIR "/default_settings.ini", user_settings_handler, NULL);
 	}
 
 	// the logger fields may have an unfinished qso details
@@ -4925,26 +4934,11 @@ int main(int argc, char *argv[])
 
 	initialize_macro_selection();
 
-	// Read voltage and current
-	// read_voltage_current(&voltage, &current);
-
-	// Print the results
-	// printf("Voltage: %.3f V\n", voltage);
-	// printf("Current: %.3f A\n", current);
-
-	// test to pass values to eq
-	//   modify_eq_band_frequency(&tx_eq, 3, 1505.0);
-	//   modify_eq_band_gain(&tx_eq, 3, -16);
-	//   modify_eq_band_bandwidth(&tx_eq, 3, 6);
-	//   print_eq_int(&tx_eq);
-
-	//	open_url("http://127.0.0.1:8080");
-	//	execute_app("chromium-browser --log-leve=3 "
-	//	"--enable-features=OverlayScrollbar http://127.0.0.1:8080"
-	//	"  &>/dev/null &");
-
 	// Register a function to be called when the application exits
 	atexit(cleanup_on_exit);
+
+	// tell the service manager we're in the ready state
+	sd_notify(0, "READY=1");
 
 	struct timespec loopms = {0 /*secs*/, 1000000 /*nanosecs*/};
 	while(1) {

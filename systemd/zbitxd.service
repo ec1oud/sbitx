@@ -1,0 +1,14 @@
+[Unit]
+Description=zBitx Systemd Service
+Requires=sound.target
+Wants=
+
+[Service]
+Type=notify
+User=zbitxd
+ExecStart=/usr/local/bin/zbitxd
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

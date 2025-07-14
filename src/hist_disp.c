@@ -7,6 +7,7 @@
 #include "sdr_ui.h"
 #include "logbook.h"
 #include "hist_disp.h"
+#include "configure.h"
 
 bool isLetter(char c) {
     return c >= 'A' && c <= 'Z';
@@ -33,7 +34,7 @@ void addGridToFile(char * gridId, int cnt) {
 }
 
 void hd_createGridList() {
-	onfFout = fopen("./web/grids.txt", "w");
+	 onfFout = fopen(STATEDIR "/grids.txt", "wb");
 
 	logbook_open();
 	logbook_get_grids(addGridToFile);

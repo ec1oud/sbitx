@@ -10,6 +10,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include "sdr.h"
+#include "configure.h"
 
 // Wisdom Defines for the FFTW and FFTWF libraries
 // Options for WISDOM_MODE from least to most rigorous are FFTW_ESTIMATE, FFTW_MEASURE, FFTW_PATIENT, and FFTW_EXHAUSTIVE
@@ -18,7 +19,7 @@
 // if the Wisdom plans in the file were generated at the same or more rigorous level.
 #define WISDOM_MODE FFTW_MEASURE
 #define PLANTIME -1		// spend no more than plantime seconds finding the best FFT algorithm. -1 turns the platime cap off.
-char wisdom_file_f[] = "/home/pi/sbitx/data/sbitx_wisdom_f.wis";  // Moved to default data directory - N3SB
+char wisdom_file_f[] = STATEDIR "/sbitx_wisdom_f.wis";  // Moved to default data directory - N3SB
 
 // Modified Bessel function of the 0th kind, used by the Kaiser window
 const float i0(float const z){
