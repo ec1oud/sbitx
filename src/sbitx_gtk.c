@@ -48,8 +48,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "logbook.h"
 #include "hist_disp.h"
 #include "ntputil.h"
-#include "para_eq.h"
-#include "eq_ui.h"
 #include <time.h>
 
 extern int get_rx_gain(void);
@@ -337,9 +335,6 @@ GtkWidget *display_area = NULL;
 GtkWidget *waterfall_gain_slider;
 GtkWidget *text_area = NULL;
 
-extern void settings_ui(GtkWidget *p);
-extern void eq_ui(GtkWidget *p);
-
 // these are callbacks called by the operating system
 static gboolean on_draw_event(GtkWidget *widget, cairo_t *cr,
 							  gpointer user_data);
@@ -557,10 +552,6 @@ int do_mouse_move(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 int do_macro(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_record(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_bandwidth(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
-int do_eqf(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
-int do_eqg(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
-int do_eqb(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
-int do_eq_edit(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_notch_edit(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_comp_edit(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_txmon_edit(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
@@ -715,85 +706,10 @@ struct field main_controls[] = {
 	{"mouse_pointer", NULL, 1000, -1000, 50, 50, "MP", 40, "LEFT", FIELD_SELECTION, STYLE_FIELD_VALUE,
 	 "BLANK/LEFT/RIGHT/CROSSHAIR", 0, 0, 0, 0},
 
-	// parametric 5-band eq controls  ( BX[F|G|B] = Band# Frequency | Gain | Bandwidth W2JON
-	{"#eq_b0f", do_eq_edit, 1000, -1000, 40, 40, "B0F", 40, "80", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 40, 160, 5, 0},
-	{"#eq_b0g", do_eq_edit, 1000, -1000, 40, 40, "B0G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#eq_b0b", do_eq_edit, 1000, -1000, 40, 40, "B0B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#eq_b1f", do_eq_edit, 1000, -1000, 40, 40, "B1F", 40, "250", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 125, 500, 50, 0},
-	{"#eq_b1g", do_eq_edit, 1000, -1000, 40, 40, "B1G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#eq_b1b", do_eq_edit, 1000, -1000, 40, 40, "B1B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#eq_b2f", do_eq_edit, 1000, -1000, 40, 40, "B2F", 40, "500", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 250, 1000, 50, 0},
-	{"#eq_b2g", do_eq_edit, 1000, -1000, 40, 40, "B2G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#eq_b2b", do_eq_edit, 1000, -1000, 40, 40, "B2B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#eq_b3f", do_eq_edit, 1000, -1000, 40, 40, "B3F", 40, "1200", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 600, 2400, 50, 0},
-	{"#eq_b3g", do_eq_edit, 1000, -1000, 40, 40, "B3G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#eq_b3b", do_eq_edit, 1000, -1000, 40, 40, "B3B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#eq_b4f", do_eq_edit, 1000, -1000, 40, 40, "B4F", 40, "2500", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1500, 3500, 50, 0},
-	{"#eq_b4g", do_eq_edit, 1000, -1000, 40, 40, "B4G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#eq_b4b", do_eq_edit, 1000, -1000, 40, 40, "B4B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 1, 0},
-
-	// RX EQ Controls (added)
-	{"#rx_eq_b0f", do_eq_edit, 1000, -1000, 40, 40, "R0F", 40, "80", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 40, 160, 5, 0},
-	{"#rx_eq_b0g", do_eq_edit, 1000, -1000, 40, 40, "R0G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#rx_eq_b0b", do_eq_edit, 1000, -1000, 40, 40, "R0B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#rx_eq_b1f", do_eq_edit, 1000, -1000, 40, 40, "R1F", 40, "250", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 125, 500, 50, 0},
-	{"#rx_eq_b1g", do_eq_edit, 1000, -1000, 40, 40, "R1G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#rx_eq_b1b", do_eq_edit, 1000, -1000, 40, 40, "R1B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#rx_eq_b2f", do_eq_edit, 1000, -1000, 40, 40, "R2F", 40, "500", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 250, 1000, 50, 0},
-	{"#rx_eq_b2g", do_eq_edit, 1000, -1000, 40, 40, "R2G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#rx_eq_b2b", do_eq_edit, 1000, -1000, 40, 40, "R2B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#rx_eq_b3f", do_eq_edit, 1000, -1000, 40, 40, "R3F", 40, "1200", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 600, 2400, 50, 0},
-	{"#rx_eq_b3g", do_eq_edit, 1000, -1000, 40, 40, "R3G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#rx_eq_b3b", do_eq_edit, 1000, -1000, 40, 40, "R3B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 0.5, 0},
-	{"#rx_eq_b4f", do_eq_edit, 1000, -1000, 40, 40, "R4F", 40, "2500", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1500, 3500, 50, 0},
-	{"#rx_eq_b4g", do_eq_edit, 1000, -1000, 40, 40, "R4G", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", -16, 16, 1, 0},
-	{"#rx_eq_b4b", do_eq_edit, 1000, -1000, 40, 40, "R4B", 40, "1", FIELD_NUMBER, STYLE_FIELD_VALUE,
-	 "", 1, 10, 1, 0},
-	{"#eq_plugin", do_toggle_option, 1000, -1000, 40, 40, "TXEQ", 40, "OFF", FIELD_TOGGLE, STYLE_FIELD_VALUE,
-	 "ON/OFF", 0, 0, 0, 0},
-	{"#rx_eq_plugin", do_toggle_option, 1000, -1000, 40, 40, "RXEQ", 40, "OFF", FIELD_TOGGLE, STYLE_FIELD_VALUE,
-	 "ON/OFF", 0, 0, 0, 0},
 	{"#selband", NULL, 1000, -1000, 50, 50, "SELBAND", 40, "80", FIELD_NUMBER, STYLE_FIELD_VALUE,
 	 "", 0, 8, 1, 0},
-	{"#set", NULL, 1000, -1000, 40, 40, "SET", 1, "", FIELD_BUTTON, STYLE_FIELD_VALUE,
-	 "", 0, 0, 0, 0, COMMON_CONTROL}, // w9jes
 	{"#poff", NULL, 1000, -1000, 40, 40, "PWR-DWN", 1, "", FIELD_BUTTON, STYLE_FIELD_VALUE,
 	 "", 0, 0, 0, 0, COMMON_CONTROL},
-	 {"#wf_call", NULL, 1000, -1000, 40, 40, "WFCALL", 1, "", FIELD_BUTTON, STYLE_FIELD_VALUE,
-		"", 0, 0, 0, 0, COMMON_CONTROL},
-
-	// EQ TX Audio Setting Controls
-	{"#eq_sliders", do_toggle_option, 1000, -1000, 40, 40, "EQSET", 40, "", FIELD_BUTTON, STYLE_FIELD_VALUE,
-	 "", 0, 0, 0, 0},
 
 	// TX Audio Monitor
 	{"#tx_monitor", do_txmon_edit, 1000, -1000, 40, 40, "TXMON", 40, "0", FIELD_NUMBER, STYLE_FIELD_VALUE,
@@ -5247,260 +5163,6 @@ int do_record(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 	return 0;
 }
 
-// Modify an existing band in the parametriceq structure
-void modify_eq_band_frequency(parametriceq *eq, int band_index, double new_frequency)
-{
-	if (band_index >= 0 && band_index < NUM_BANDS)
-	{
-		eq->bands[band_index].frequency = new_frequency;
-		// print_eq_int(eq);
-	}
-	else
-	{
-		printf("Invalid Band Index Selected");
-	}
-}
-// Example usage: modify_eq_band_frequency(&tx_eq, 3, 4105.0);  // Change frequency of band 3 to 4105.0 Hz
-
-void modify_eq_band_gain(parametriceq *eq, int band_index, double new_gain)
-{
-	// Limit gain range -16 to +16 dB
-	if (band_index >= 0 && band_index < NUM_BANDS)
-	{
-		// Clamp gain within range
-		if (new_gain < -16.0)
-		{
-			new_gain = -16.0;
-		}
-		else if (new_gain > 16.0)
-		{
-			new_gain = 16.0;
-		}
-		eq->bands[band_index].gain = new_gain;
-		// print_eq_int(eq);
-		// fflush(stdout);
-	}
-	else
-	{
-		printf("Invalid Band Index Selected");
-	}
-}
-// Example usage: modify_eq_band_gain(&tx_eq, 1, 4.5);  // Change gain of band 1 to 4.5 dB
-
-void modify_eq_band_bandwidth(parametriceq *eq, int band_index, double new_bandwidth)
-{
-	if (band_index >= 0 && band_index < NUM_BANDS)
-	{
-		eq->bands[band_index].bandwidth = new_bandwidth;
-		//       print_eq_int(eq);
-	}
-	else
-	{
-		printf("Invalid Band Index Selected");
-	}
-}
-// Example usage: modify_eq_band_bandwidth(&tx_eq, 2, 0.8);  // Change bandwidth of band 2 to 0.8
-
-// We need to pick out which band we are working with, so lets figure out which control is calling
-//  Function to extract band from label
-int get_band_and_eq_type_from_label(const char *label, int *is_rx)
-{
-	int band = -1;
-
-	if (label)
-	{
-		if (strlen(label) >= 4)
-		{ // Ensure the label has enough length
-			// Determine if it's TX or RX
-			*is_rx = (label[0] == 'R') ? 1 : 0;
-
-			// Extract band index
-			if (label[1] == 'B' && (label[3] == 'F' || label[3] == 'G' || label[3] == 'B'))
-			{
-				band = label[2] - '0'; // Convert band number
-				if (band < 0 || band >= NUM_BANDS)
-				{
-					band = -1;
-				}
-			}
-		}
-	}
-	return band;
-}
-
-// Adjusting do_eqf, do_eqg, do_eqb functions to use band parameter
-int do_eqf(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
-{
-	int is_rx = 0;
-	int band = get_band_and_eq_type_from_label(f->label, &is_rx); // Determine band and TX/RX
-	int v = atoi(f->value);
-
-	if (band != -1 && event == FIELD_EDIT)
-	{
-		if (a == MIN_KEY_UP && v + f->step <= f->max)
-		{
-			v += f->step;
-		}
-		else if (a == MIN_KEY_DOWN && v - f->step >= f->min)
-		{
-			v -= f->step;
-		}
-
-		sprintf(f->value, "%d", v);
-		update_field(f);
-
-		// Update the frequency for the correct EQ
-		char buff[20];
-		if (is_rx)
-		{
-			modify_eq_band_frequency(&rx_eq, band, (double)v);
-			sprintf(buff, "R%dF=%d", band, v);
-		}
-		else
-		{
-			modify_eq_band_frequency(&tx_eq, band, (double)v);
-			sprintf(buff, "B%dF=%d", band, v);
-		}
-
-		// printf("%s\n", buff);
-
-		return 1;
-	}
-	return 0;
-}
-
-int do_eqg(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
-{
-	int is_rx = 0;
-	int band = get_band_and_eq_type_from_label(f->label, &is_rx); // Determine band and TX/RX
-	int v = atoi(f->value);
-	// printf("do_eqg> Band_From_Label: %d, Initial Value: %d\n", band, v);
-
-	if (event == FIELD_EDIT)
-	{
-		if (a == MIN_KEY_UP && v + f->step <= f->max)
-		{
-			v += f->step;
-		}
-		else if (a == MIN_KEY_DOWN && v - f->step >= f->min)
-		{
-			v -= f->step;
-		}
-
-		// printf("do_eqg> Adjusted Value: %d\n", v);
-		sprintf(f->value, "%d", v);
-		update_field(f);
-
-		// Pass the new gain value to the EQ function
-		// printf("do_eqg> Calling modify_eq_band_gain with band: %d, value: %d\n", band, v);
-		// Update the frequency for the correct EQ
-		char buff[20];
-		if (is_rx)
-		{
-			modify_eq_band_gain(&rx_eq, band, (double)v);
-			sprintf(buff, "R%dG=%d", band, v);
-		}
-		else
-		{
-			modify_eq_band_gain(&tx_eq, band, (double)v);
-			sprintf(buff, "B%dG=%d", band, v);
-		}
-
-		// printf("do_eqg> %s\n", buff);
-
-		return 1;
-	}
-
-	return 0;
-}
-
-int do_eqb(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
-{
-	int is_rx = 0;
-	int band = get_band_and_eq_type_from_label(f->label, &is_rx); // Determine band and TX/RX
-	int v = atoi(f->value);
-	// printf("do_eqb> Band_From_Label: %d, Initial Value: %d\n", band, v);
-
-	if (event == FIELD_EDIT)
-	{
-		if (a == MIN_KEY_UP && v + f->step <= f->max)
-		{
-			v += f->step;
-		}
-		else if (a == MIN_KEY_DOWN && v - f->step >= f->min)
-		{
-			v -= f->step;
-		}
-
-		// printf("do_eqb> Adjusted Value: %d\n", v);
-		sprintf(f->value, "%d", v);
-		update_field(f);
-
-		// Pass the new bandwidth value to the EQ function
-		// printf("do_eqb> Calling modify_eq_band_bandwidth with band: %d, value: %d\n", band, v);
-		// Update the frequency for the correct EQ
-		char buff[20];
-		if (is_rx)
-		{
-			modify_eq_band_bandwidth(&rx_eq, band, (double)v);
-			sprintf(buff, "R%dB=%d", band, v);
-		}
-		else
-		{
-			modify_eq_band_bandwidth(&tx_eq, band, (double)v);
-			sprintf(buff, "B%dB=%d", band, v);
-		}
-
-		// printf("do_ebq> %s\n", buff);
-
-		return 1;
-	}
-
-	return 0;
-}
-
-int do_eq_edit(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
-{
-	// printf("Entering do_eq_edit: Label = %s\n", f->label);
-	int is_rx = 0;
-	int band = get_band_and_eq_type_from_label(f->label, &is_rx);
-	// printf("do_eq_edit> Band ID from label: %d\n", band);
-
-	if (band != -1)
-	{
-		// printf("do_eq_edit> Valid band found: %d\n", band);
-
-		// Depending on the event, handle adjustments for frequency, gain, or bandwidth
-		char suffix = f->label[strlen(f->label) - 1];
-		if (suffix == 'F')
-		{
-			// printf("do_eq_edit> Adjusting frequency for band %d...\n", band);
-			return do_eqf(f, gfx, event, a, b, c); // Frequency adjustment
-		}
-		else if (suffix == 'G')
-		{
-			// printf("do_eq_edit> Adjusting gain for band %d...\n", band);
-			return do_eqg(f, gfx, event, a, b, c); // Gain adjustment
-		}
-		else if (suffix == 'B')
-		{
-			// printf("do_eq_edit> Adjusting bandwidth for band %d...\n", band);
-			return do_eqb(f, gfx, event, a, b, c); // Bandwidth adjustment
-		}
-		else
-		{
-			// printf("do_eq_edit> Unknown suffix: %c\n", suffix);
-		}
-	}
-	else
-	{
-		// printf("do_eq_edit> Invalid band: %d\n", band);
-	}
-
-	// printf("Exiting do_eq_edit\n");
-	return 0;
-}
-
 //---Noise threshold for DSP -W2JON
 double scaleNoiseThreshold(int control)
 {
@@ -7771,14 +7433,6 @@ void do_control_action(char *cmd)
 			field_set("DRIVE", powerstore);
 		}
 	}
-	else if (!strcmp(request, "EQSET"))
-	{
-		eq_ui(window);
-	}
-	else if (!strcmp(request, "SET"))
-	{
-		settings_ui(window);
-	}
 	else if (!strcmp(request, "PWR-DWN"))
 	{
 		on_power_down_button_click(NULL, NULL);
@@ -8461,65 +8115,6 @@ void ensure_single_instance()
 	}
 }
 
-void print_eq_int(const parametriceq *eq, const char *label)
-{
-	printf("=== %s ===\n", label);
-	for (int i = 0; i < NUM_BANDS; ++i)
-	{
-		printf("Band %d: Frequency=%.2f, Gain=%.2f, Bandwidth=%.2f\n",
-			   i, eq->bands[i].frequency, eq->bands[i].gain, eq->bands[i].bandwidth);
-	}
-	printf("=========================\n");
-}
-
-void get_print_and_set_values(GtkWidget *freq_sliders[], GtkWidget *gain_sliders[], const char *prefix)
-{
-	for (gint i = 0; i < 5; i++)
-	{
-		gchar freq_field_name[20];
-		gchar gain_field_name[20];
-
-		// Construct field names: use "#eq" for TX (empty prefix) and "#rx_eq" for RX
-		if (prefix && strcmp(prefix, "tx") == 0)
-		{
-			// TX case: no prefix, just "#eq"
-			g_snprintf(freq_field_name, sizeof(freq_field_name), "#eq_b%df", i);
-			g_snprintf(gain_field_name, sizeof(gain_field_name), "#eq_b%dg", i);
-		}
-		else
-		{
-			// RX case: include the prefix
-			g_snprintf(freq_field_name, sizeof(freq_field_name), "#%s_eq_b%df", prefix, i);
-			g_snprintf(gain_field_name, sizeof(gain_field_name), "#%s_eq_b%dg", prefix, i);
-		}
-
-		// Handle frequency sliders
-		struct field *freq_field = get_field(freq_field_name);
-		if (freq_field == NULL || freq_field->value == NULL)
-		{
-			g_warning("Field %s not found or has no value", freq_field_name);
-		}
-		else
-		{
-			gdouble freq_value = strtod(freq_field->value, NULL);
-			g_print("%s Control %s has frequency value %f\n", prefix, freq_field_name, freq_value);
-			gtk_range_set_value(GTK_RANGE(freq_sliders[i]), freq_value);
-		}
-
-		// Handle gain sliders
-		struct field *gain_field = get_field(gain_field_name);
-		if (gain_field == NULL || gain_field->value == NULL)
-		{
-			g_warning("Field %s not found or has no value", gain_field_name);
-		}
-		else
-		{
-			gdouble gain_value = strtod(gain_field->value, NULL);
-			g_print("%s Control %s has gain value %f\n", prefix, gain_field_name, gain_value);
-			gtk_range_set_value(GTK_RANGE(gain_sliders[i]), gain_value);
-		}
-	}
-}
 int main(int argc, char *argv[])
 {
 

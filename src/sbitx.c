@@ -23,7 +23,6 @@
 #include "i2cbb.h"
 #include "si5351.h"
 #include "ini.h"
-#include "para_eq.h"
 
 #define DEBUG 0
 
@@ -31,8 +30,6 @@ int bandtweak = 4;		// Band power array index the \bs command will target -n1qm
 int ext_ptt_enable = 0; // ADDED BY KF7YDU.
 char audio_card[32];
 static int tx_shift = 512;
-parametriceq tx_eq;
-parametriceq rx_eq;
 
 FILE *pf_debug = NULL;
 
@@ -1140,14 +1137,6 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 		zero_beat_indicator = 0;
 	}
 
-	static int rx_eq_initialized = 0;
-
-	if (!rx_eq_initialized)
-	{
-		init_eq(&rx_eq, "rx");
-		rx_eq_initialized = 1;
-	}
-
 	// STEP 4a: BIN processing functions for a better life.
 
 	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE)
@@ -1392,6 +1381,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 	modem_rx(rx_list->mode, output_speaker, MAX_BINS / 2);
 
 	// Apply RXEQ after Modem only on non-digital modes
+	/*
 	if (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE)
 	{
 		if (rx_eq_is_enabled == 1)
@@ -1414,6 +1404,7 @@ void rx_linear(int32_t *input_rx, int32_t *input_mic,
 			}
 		}
 	}
+	*/
 }
 
 void read_power()
@@ -1505,13 +1496,6 @@ void tx_process(
 		fft_reset_m_bins();
 		tx_process_restart = 0;
 	}
-	static int eq_initialized = 0;
-
-	if (!eq_initialized)
-	{
-		init_eq(&tx_eq, "tx");
-		eq_initialized = 1;
-	}
 
 	if (in_tx && (r->mode != MODE_DIGITAL && r->mode != MODE_FT8 && r->mode != MODE_2TONE && r->mode != MODE_CW && r->mode != MODE_CWR))
 	{
@@ -1544,6 +1528,7 @@ void tx_process(
 			}
 		}
 
+		/*
 		if (eq_is_enabled == 1)
 		{
 			if (use_browser_mic) {
@@ -1552,6 +1537,7 @@ void tx_process(
 				apply_eq(&tx_eq, input_mic, n_samples, 48000.0);
 			}
 		}
+		*/
 	}
 
 	if (mute_count && (r->mode == MODE_USB || r->mode == MODE_LSB || r->mode == MODE_AM))
