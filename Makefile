@@ -61,13 +61,13 @@ adduser:
 install: adduser
 	install -D --mode=755 $(TARGET) $(DESTDIR)/$(BINDIR)/$(TARGET)
 	install -d --owner=$(OWNER) --group=$(OWNER) $(DESTDIR)/$(SHAREDIR)/web
-	install -m 644 --owner=$(OWNER) --group=$(OWNER) web/* $(DESTDIR)/$(SHAREDIR)/web
+	install -m 644 --owner=$(OWNER) --group=$(OWNER) web/* $(DESTDIR)/$(SHAREDIR)/web ||:
 	install -d --owner=$(OWNER) --group=$(OWNER) $(DESTDIR)/$(STATEDIR)
 	install -m 644 --owner=$(OWNER) --group=$(OWNER) data/default_hw_settings.ini $(DESTDIR)/$(STATEDIR)
 	install -m 644 --owner=$(OWNER) --group=$(OWNER) data/default_settings.ini $(DESTDIR)/$(STATEDIR)
 	install -d $(DESTDIR)/$(PREFIX)/lib/systemd/system/
-	install -m 644 systemd/zbitxd.service $(DESTDIR)/$(PREFIX)/lib/systemd/system
-	ln -sf /var/lib/zbitxd/grids.txt /usr/local/share/zbitxd/web/grids.txt
+	install -m 644 systemd/sbitxd.service $(DESTDIR)/$(PREFIX)/lib/systemd/system
+	ln -sf /var/lib/sbitxd/grids.txt /usr/local/share/sbitxd/web/grids.txt
 ifeq ("$(wildcard $(DESTDIR)/$(STATEDIR)/sbitx.db)","")
 	$(shell sqlite3 $(DESTDIR)/$(STATEDIR)/sbitx.db < data/create_db.sql)
 endif
@@ -77,6 +77,6 @@ uninstall:
 	rm -rf $(DESTDIR)/$(SHAREDIR)
 	rm -f $(DESTDIR)/$(STATEDIR)/default_hw_settings.ini
 	rm -f $(DESTDIR)/$(STATEDIR)/default_settings.ini
-	rm -f $(DESTDIR)/$(PREFIX)/lib/systemd/system/zbitxd.service
+	rm -f $(DESTDIR)/$(PREFIX)/lib/systemd/system/sbitxd.service
 
 .PHONY: adduser create_configure.h clean install uninstall

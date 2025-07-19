@@ -11,4 +11,4 @@ unused/
 *.o
 build.log
 configure.h
-zbitxd
+sbitxd

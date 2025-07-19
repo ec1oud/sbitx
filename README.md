@@ -1,7 +1,7 @@
-# zBitx systemd daemon
+# s/zBitx systemd daemon
 ## Introduction
-This is a daemon for controlling the zBitx transceiver. It is based on the official GTK client, from which all GTK GUI elements have been removed. This means that a graphical desktop environment is no longer required.
-Control is still via the touchscreen of the zBitx frontend or via a browser.
+This is a daemon for controlling a sBitx or zBitx transceiver. It is based on a fork of the official GTK client, in which many bugs are fixed, and all GTK GUI elements have been removed. This means that a graphical desktop environment is no longer required.
+Control is via the touchscreen of the zBitx, remote control, or via a browser. 9p support will be added back later, and a new client will be built for use on the sbitx touchscreen.
 The daemon is started and stopped with the support of systemd.
 
 ## Requirements
@@ -26,37 +26,40 @@ The following describes the installation on the standard operating system with w
   sudo apt install libsystemd-dev
   ```
 
-3. Download  
+3. Download and check out branch
   ```
   cd
-  git clone https://github.com/dg0jde/zbitxd.git
+  git clone https://github.com/ec1oud/sbitx
+  cd sbitx
+  git checkout sbitxd
   ```
 
 4. Build and install  
   ```
-  ~/zbitxd/update
+  make
+  sudo make install
   ```
-  This builds the zBitx daemon from the sources. The installation then takes place, creating a new system user “zbitxd”.
-  In future, updates can also be installed with this command.
+  This builds the sBitx daemon from the sources. The installation then takes place, creating a new system user “sbitxd”.
+  In future, updates can also be installed the same way.
 
 5. Copy the existing configurations  
   ```
-  sudo cp ~/sbitx/data/hw_settings.ini /var/lib/zbitxd/
-  sudo cp ~/sbitx/data/sbitx.db /var/lib/zbitxd/
-  sudo cp ~/sbitx/data/user_settings.ini /var/lib/zbitxd/
-  sudo chown zbitxd:zbitxd /var/lib/zbitxd/*
+  sudo cp ~/sbitx/data/hw_settings.ini /var/lib/sbitxd/
+  sudo cp ~/sbitx/data/sbitx.db /var/lib/sbitxd/
+  sudo cp ~/sbitx/data/user_settings.ini /var/lib/sbitxd/
+  sudo chown sbitxd:sbitxd /var/lib/sbitxd/*
   ```
 
 6. Start  
   ```
   sudo systemctl daemon-reload
-  sudo systemctl start zbitxd
+  sudo systemctl start sbitxd
   ```
-  zBitx should now work normally.
+  The transceiver should now work normally.
 
 7. Automatic start  
   ```
-  sudo systemctl enable zbitxd
+  sudo systemctl enable sbitxd
   sudo raspi-config
   ```
   * 1 System Options  
