@@ -110,9 +110,12 @@ void sound_mixer(char *card_name, char *element, int make_on)
     snd_mixer_selem_id_set_name(sid, element);
     snd_mixer_elem_t* elem = snd_mixer_find_selem(handle, sid);
 
-/*		if (elem)
-			puts("Element found.");
-	*/
+	if (!elem) {
+		printf("failed to find mixer element of %s\n", card_name);
+    		snd_mixer_close(handle);
+		return; // it may be a transient failure at startup
+	}
+
     //find out if the his element is capture side or plaback
     if(snd_mixer_selem_has_capture_switch(elem)){
 			//puts("this is a capture switch.");
