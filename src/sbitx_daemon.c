@@ -48,7 +48,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "webserver.h"
 #include "logbook.h"
 #include "hist_disp.h"
-#include "ntputil.h"
 #include "configure.h"
 
 #ifndef MIN
@@ -1000,7 +999,7 @@ int remote_update_field(int i, char *text)
 	if (!strcmp(f->label, "STATUS"))
 	{
 		// send time
-		time_t now = time_sbitx();
+		time_t now = time(NULL);
 		struct tm *tmp = gmtime(&now);
 		sprintf(text, "STATUS %04d/%02d/%02d %02d:%02d:%02dZ",
 				tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
@@ -2084,7 +2083,7 @@ int do_status(struct field *f, int event, int a, int b, int c){
 	char buff[100];
 
 	if (event == FIELD_DRAW){
-		//time_t now = time_sbitx();
+		//time_t now = time(NULL);
 		//struct tm *tmp = gmtime(&now);
 		//sprintf(buff, "%04d/%02d/%02d %02d:%02d:%02dZ",
 		//	tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
@@ -3617,19 +3616,6 @@ void zbitx_init()
 	}
 }
 
-int next_sync = 0; //sets to -1  after a network update
-void try_ntp(){
-	const char* ntp_server = "pool.ntp.org";
-
-	if (next_sync > millis() || next_sync == -1)
-		return;
-
-	if (sync_sbitx_time(ntp_server) != -1)
-		next_sync = -1;
-	else
-		next_sync = millis() + 30000;
-}
-
 bool ui_tick(){
 	int static ticks = 0;
 
@@ -3700,8 +3686,6 @@ bool ui_tick(){
 
 		if (sbitx_hw_version == SBITX_V4)
 			zbitx_poll(0);
-
-		try_ntp();
 
 		if (in_tx && sbitx_hw_version != SBITX_V4)
 		{
@@ -3981,9 +3965,6 @@ void utc_set(char *args, int update_rtc)
 					  "ex: \\utc 2022 07 14 8:40:00\n");
 		return;
 	}
-
-	rtc_write_ntp(n[0], n[1], n[2], n[3], n[4], n[5]);
- 	rtc_read();
 
 	if (n[0] < 2000)
 		n[0] += 2000;
@@ -4541,8 +4522,6 @@ void cmd_exec(char *cmd)
 		meter_calibrate();
 	else if (!strcmp(exec, "abort"))
 		abort_tx();
-	else if (!strcmp(exec, "rtc"))
-		rtc_read();
 	else if (!strcmp(exec, "txcal"))
 	{
 		char response[10];
@@ -4826,12 +4805,9 @@ int main(int argc, char *argv[])
 	else
 		setup("plughw:0,0");	// otherwise use the default audio output device
 
-	sync_sbitx_time("pool.ntp.org");
-
 	struct field *f;
 	f = active_layout;
 	field_init();
-
 
 	hd_createGridList();
 	// initialize the modulation display
@@ -4917,7 +4893,6 @@ int main(int argc, char *argv[])
 	// hamlib_start();
 	initialize_hamlib();
 	remote_start();
-	rtc_read();
 	zbitx_init();
 	printf("hw version: %d\n", sbitx_hw_version);
 

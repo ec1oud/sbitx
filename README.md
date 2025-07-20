@@ -9,6 +9,7 @@ The daemon is started and stopped with the support of systemd.
 - Internet connection via WLAN
 - Login as user “pi”, preferably via SSH. Alternatively, you can also use a directly connected monitor and keyboard.
 - The old sbitx application has been terminated.
+- System time is maintained externally: sbitxd no longer does its own NTP queries nor reads the RTC.
 
 ## Installation
 
@@ -65,4 +66,13 @@ The following describes the installation on the standard operating system with w
   * 1 System Options  
     * S5 Boot / Auto Login  
       * B1 Console  
+
+8. Get hwclock working
+
+  ```
+  sudo echo 'dtoverlay=i2c-rtc-gpio,ds3231,i2c_gpio_sda=13,i2c_gpio_scl=6,addr=0x68' >> /boot/config.txt
+  ```
+
+  If you are outdoors or otherwise disconnected a lot (POTA SOTA etc.), you might want to install chrony instead of ntpd:
+  it's better at maintaining time when the system has only intermittent Internet connectivity.  But the DS3231 hardware RTC is expected to be accurate anyway.
 

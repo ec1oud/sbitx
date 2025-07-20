@@ -143,7 +143,7 @@ int logbook_count_dup(const char *callsign, int last_seconds){
 	char date_str[100], time_str[100], statement[1000];
 	sqlite3_stmt *stmt;
 
-	time_t log_time = time_sbitx() - last_seconds;
+	time_t log_time = time(NULL) - last_seconds;
 	struct tm *tmp = gmtime(&log_time);
 	sprintf(date_str, "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
 	sprintf(time_str, "%02d%02d", tmp->tm_hour, tmp->tm_min);
@@ -316,7 +316,7 @@ void message_add(char *mode, unsigned int frequency, int outgoing, char *message
 	frequency = frequency + atoi(freq_str);
 
 	/* get the time */
-	time_t log_time = time_sbitx();
+	time_t log_time = time(NULL);
 	struct tm *tmp = gmtime(&log_time);
 
 	int date_utc = ((tmp->tm_year + 1900)*10000)
@@ -347,7 +347,7 @@ void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 	char statement[1000], *err_msg, date_str[11], time_str[5];
 	char freq[12], log_freq[12], mode[10], mycallsign[12];
 
-	time_t log_time = time_sbitx();
+	time_t log_time = time(NULL);
 	struct tm *tmp = gmtime(&log_time);
 	get_field_value("r1:freq", freq);
 	get_field_value("r1:mode", mode);

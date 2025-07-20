@@ -550,7 +550,7 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
 
 		//timestamp the packets
 		//the time is shifted back by the time it took to capture these sameples
-		time_t	rawtime = (time_sbitx() / 15) * 15; //round to the earlier slot
+		time_t	rawtime = (time(NULL) / 15) * 15; //round to the earlier slot
 		char time_str[20], response[100];
 		struct tm *t = gmtime(&rawtime);
 		sprintf(time_str, "%02d%02d%02d", t->tm_hour, t->tm_min, t->tm_sec);
@@ -758,7 +758,7 @@ void ft8_setmode(int config){
 static void ft8_start_tx(int offset_seconds){
 	char buf[100];
 	//timestamp the packets for display log
-	time_t	rawtime = time_sbitx();
+	time_t	rawtime = time(NULL);
 	struct tm *t = gmtime(&rawtime);
 
 	int freq = field_int("TX_PITCH");
@@ -784,7 +784,7 @@ static void ft8_start_tx(int offset_seconds){
 void ft8_tx(char *message, int freq){
 	char cmd[200], buff[1000];
 	FILE	*pf;
-	time_t	rawtime = time_sbitx();
+	time_t	rawtime = time(NULL);
 	struct tm *t = gmtime(&rawtime);
 
 	for (int i = 0; i < strlen(message); i++)
@@ -803,7 +803,7 @@ void ft8_tx(char *message, int freq){
 	char str_tx1st[10], str_repeat[10];
 	get_field_value_by_label("FT8_TX1ST", str_tx1st);
 	get_field_value_by_label("FT8_REPEAT", str_repeat);
-	int slot_second = time_sbitx() % 15;
+	int slot_second = time(NULL) % 15;
 
 	//no repeat for '73'
 	int msg_length = strlen(message);
@@ -833,7 +833,7 @@ void ft8_tx(char *message, int freq){
 void ft8_tx_3f(const char* call_to, const char* call_de, const char* extra) {
 	char cmd[200], buff[1000];
 	FILE	*pf;
-	time_t	rawtime = time_sbitx();
+	time_t	rawtime = time(NULL);
 	struct tm *t = gmtime(&rawtime);
 
 	ft8_pitch = field_int("TX_PITCH");
@@ -850,7 +850,7 @@ void ft8_tx_3f(const char* call_to, const char* call_de, const char* extra) {
 	char str_tx1st[10], str_repeat[10];
 	get_field_value_by_label("FT8_TX1ST", str_tx1st);
 	get_field_value_by_label("FT8_REPEAT", str_repeat);
-	int slot_second = time_sbitx() % 15;
+	int slot_second = time(NULL) % 15;
 
 	// no repeat for '73'
 	if (!strcmp(extra, " 73"))
@@ -902,7 +902,7 @@ void ft8_rx(int32_t *samples, int count){
 		//ft8_rx_buff[ft8_rx_buff_index++] = samples[i];
 		ft8_rx_buffer[ft8_rx_buff_index++] = samples[i] / 200000000.0f;
 
-	int now = time_sbitx();
+	int now = time(NULL);
 	if (now != wallclock)
 		wallclock = now;
 	else
