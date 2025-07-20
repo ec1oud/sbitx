@@ -4948,7 +4948,6 @@ int main(int argc, char *argv[])
 		nanosleep(&loopms, &loopms);
 	}
 
-	save_user_settings(1);
 	return 0;
 }
 
@@ -4956,4 +4955,5 @@ int main(int argc, char *argv[])
 void cleanup_on_exit() {
 	// Add any other cleanup tasks here
 	printf("Cleaning up resources before exit\n");
+	save_user_settings(1);
 }
