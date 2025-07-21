@@ -1308,6 +1308,10 @@ void save_user_settings(int forced)
 	// copy the current freq settings to the currently selected vfo
 	struct field *f_freq = get_field("r1:freq");
 	struct field *f_vfo = get_field("#vfo");
+	const char *vfo_id = strcmp(f_vfo->value, "B") ? "#vfo_a_freq" : "#vfo_b_freq";
+	struct field *f_vfo_x = get_field(vfo_id);
+	printf("save_user_settings(%d): freq %s -> VFO %s which was %s\n", forced, f_freq->value, f_vfo->value, f_vfo_x->value);
+	set_field(vfo_id, f_freq->value);
 
 	FILE *f = fopen(file_path, "w");
 	if (!f)
@@ -3731,7 +3735,7 @@ bool ui_tick(){
 
 	// hamlib_slice();
 	remote_slice();
-	save_user_settings(0);
+	//~ save_user_settings(0); // avoid excessive writing, trust saving at exit
 
 	f = get_field("r1:mode");
 	// straight key in CW
