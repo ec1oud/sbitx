@@ -28,6 +28,7 @@ MONGOOSE_FLAGS = -DMG_ENABLE_OPENSSL=1 -DMG_ENABLE_MBEDTLS=0 -DMG_TLS=MG_TLS_OPE
 $(TARGET): create_configure.h $(OBJECTS) ft8_lib/libft8.a
 	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(FFTOBJ) $(LIBPATH) $(LIBS)
 	sudo setcap CAP_SYS_TIME+ep $(TARGET) # Provide capability to adjust the local system time -W2JON
+	sudo setcap CAP_NET_BIND_SERVICE=+eip $(TARGET) # Allow 9p to listen on port 564
 
 src/mongoose.o: src/mongoose.c
 	$(CC) -c $(CFLAGS) $(DEBUGFLAGS) $(INCPATH) $(MONGOOSE_FLAGS) -o $@ $<
@@ -60,6 +61,8 @@ adduser:
 
 install: adduser
 	install -D --mode=755 $(TARGET) $(DESTDIR)/$(BINDIR)/$(TARGET)
+	sudo setcap CAP_SYS_TIME+ep $(DESTDIR)/$(BINDIR)/$(TARGET)
+	sudo setcap CAP_NET_BIND_SERVICE=+eip $(DESTDIR)/$(BINDIR)/$(TARGET)
 	install -d --owner=$(OWNER) --group=$(OWNER) $(DESTDIR)/$(SHAREDIR)/web
 	install -m 644 --owner=$(OWNER) --group=$(OWNER) web/* $(DESTDIR)/$(SHAREDIR)/web ||:
 	install -d --owner=$(OWNER) --group=$(OWNER) $(DESTDIR)/$(STATEDIR)
