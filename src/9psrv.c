@@ -22,6 +22,7 @@
  */
 
 #include <assert.h>
+#include <ctype.h>
 #include <err.h>
 #include <errno.h>
 #include <ifaddrs.h>
@@ -44,6 +45,7 @@ typedef struct Devfile Devfile;
 struct Devfile {
 	char	*name;
 	int	(*doread)(char*, int, int);
+	void	(*dowrite)(const char*, int, int);
 	mode_t	mode;
 	uint64_t id; // aka qid.path
 	uint32_t atime;
@@ -61,7 +63,8 @@ struct FidAux {
 static char
 	Enoperm[] = "permission denied",
 	Enofile[] = "file not found",
-	Ebadvalue[] = "bad value";
+	Ebadvalue[] = "bad value",
+	Ebadfid[] = "bad FID";
 
 /* Macros */
 // TODO output timestamps
@@ -108,17 +111,34 @@ static int read_freq(char *out, int len, int offset) {
 	return end - out;
 }
 
+static void write_freq(const char *val, int len, int offset) {
+	debug("write_freq %s %d %d\n", val, len, offset);
+	field_set("FREQ", val);
+}
+
 static int read_ifgain(char *out, int len, int offset) {
-	if (offset >= 2) // TODO silly
+	static time_t last_read = 0;
+	static char val[12];
+	time_t now = time(nil);
+	if (now - last_read > 1) {
+		get_field_value("r1:gain", val);
+		last_read = now;
+	}
+	int vlen = strlen(val);
+	if (offset >= vlen)
 		return 0;
-	char *end = stpncpy(out, "70", len);
+	char *end = stpncpy(out, val, len); // Plan 9: strecpy
 	return end - out;
 }
 
+static void write_ifgain(const char *val, int len, int offset) {
+	field_set("IF", val);
+}
+
 static Devfile devfiles[] = {
-	{ "/", read_dir, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
-	{ "frequency", read_freq, DMEXCL|0666, 1, 0, 0 },
-	{ "if_gain", read_ifgain, DMEXCL|0666, 2, 0, 0 },
+	{ "/", read_dir, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ "frequency", read_freq, write_freq, DMEXCL|0666, 1, 0, 0 },
+	{ "if_gain", read_ifgain, write_ifgain, DMEXCL|0666, 2, 0, 0 },
 };
 static const int devfiles_count = 3;
 
@@ -227,8 +247,10 @@ void fs_walk(Ixp9Req *r) {
 	int i = 0;
 
 	f = r->fid->aux;
-	if (!f || !f->file)
+	if (!f || !f->file) {
 		ixp_respond(r, Enofile);
+		return;
+	}
 	debug("fs_walk(%p %d) %p from %s\n", f, r->fid->fid, f->file, f->file->name);
 	name[0] = 0;
 
@@ -268,7 +290,10 @@ void fs_stat(Ixp9Req *r) {
 	int size;
 
 	f = r->fid->aux;
-	// if it somehow doesn't exist: ixp_respond(r, Enofile); return;
+	if (!f || !f->file) {
+		rerrno(r, Ebadfid);
+		return;
+	}
 	debug("fs_stat(%p) %s\n", r, f->file->name);
 
 	dostat(&s, f->file);
@@ -288,6 +313,10 @@ void fs_read(Ixp9Req *r) {
 	int size;
 
 	f = r->fid->aux;
+	if (!f || !f->file) {
+		rerrno(r, Ebadfid);
+		return;
+	}
 
 	if (f->file->mode & P9_DMDIR) {
 		IxpStat s;
@@ -334,21 +363,59 @@ void fs_read(Ixp9Req *r) {
 	assert(!"Read called on an unreadable file");
 }
 
+// https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way
+// Note: This function returns a pointer to a substring of the original string.
+// If the given string was allocated dynamically, the caller must not overwrite
+// that pointer with the returned value, since the original pointer must be
+// deallocated using the same allocator with which it was allocated.  The return
+// value must NOT be deallocated using free() etc.
+char *trimwhitespace(char *str)
+{
+  char *end;
+
+  // Trim leading space
+  while(isspace((unsigned char)*str)) str++;
+
+  if(*str == 0)  // All spaces?
+    return str;
+
+  // Trim trailing space
+  end = str + strlen(str) - 1;
+  while(end > str && isspace((unsigned char)*end)) end--;
+
+  // Write new null terminator character
+  end[1] = '\0';
+
+  return str;
+}
+
 void fs_write(Ixp9Req *r) {
-	FidAux *f = r->fid->aux;
-
-	debug("fs_write(%p) %s\n", r, f->file->name);
-
 	if(r->ifcall.twrite.count == 0) {
 		ixp_respond(r, nil);
 		return;
 	}
-	// fs_write should not be called if the file is not open for reading
-	assert(!"Write called on an unwritable file");
+	FidAux *f = r->fid->aux;
+	if (!f || !f->file) {
+		rerrno(r, Ebadfid);
+		return;
+	}
+	if (!(f->file->mode & P9_DMWRITE) || !f->file->dowrite) {
+		rerrno(r, Enoperm);
+		return;
+	}
+	char *trimmed = trimwhitespace(r->ifcall.twrite.data);
+	debug("fs_write(%p) %s: %s %d %d\n", r, f->file->name, trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	f->file->dowrite(trimmed, r->ifcall.twrite.count, r->ifcall.twrite.offset);
+	r->ofcall.rwrite.count = r->ifcall.twrite.count;
+	ixp_respond(r, nil);
 }
 
 void fs_open(Ixp9Req *r) {
 	FidAux *f = r->fid->aux;
+	if (!f || !f->file) {
+		rerrno(r, Ebadfid);
+		return;
+	}
 	if (f->file->mode & P9_DMDIR) {
 		debug("fs_open(%p %p) dir\n", f, f->file);
 		// nothing to do
@@ -373,6 +440,10 @@ void fs_remove(Ixp9Req *r) {
 
 void fs_clunk(Ixp9Req *r) {
 	FidAux *f = r->fid->aux;
+	if (!f || !f->file) {
+		rerrno(r, Ebadfid);
+		return;
+	}
 	debug("fs_clunk(%p)\n", f);
 	f->fd = -1;
 	f->file = nil;
@@ -385,6 +456,10 @@ void fs_flush(Ixp9Req *r) {
 }
 
 void fs_freefid(IxpFid *f) {
+	if (!f || !f->aux) {
+		debug("free FID: null FID or aux\n");
+		return;
+	}
 	FidAux *aux = f->aux;
 	debug("fs_freefid(%p)\n", f, aux->fd);
 	aux->fd = -1;
