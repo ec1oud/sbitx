@@ -213,7 +213,7 @@ static void stat_text(IxpStat *s, const Devfile *df, int data_index) {
 }
 
 static int read_text(const Devfile *df, char *out, int len, int offset) {
-	debug("read_text '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	//~ debug("read_text '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text(out, len, offset, df->semantic_filter);
 }
 
@@ -240,7 +240,7 @@ static void stat_text_spans(IxpStat *s, const Devfile *df, int data_index) {
 }
 
 static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
-	debug("read_text_spans '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	//~ debug("read_text_spans '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
 	return get_console_text_spans((text_span_semantic *)out, len, offset, df->semantic_filter);
 }
 
@@ -248,14 +248,14 @@ static void update_console_mtimes_and_sizes(time_t mtime) {
 	for (int f = devfiles_count - 1; f > 0; --f)
 		if (devfiles[f].dostat == stat_text) {
 			int parent_sought = devfiles[f].parent;
-			debug("mtime %u; checking for ancestor %d of %d '%s' (total files %d)\n",
-				mtime, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
+			//~ debug("mtime %u; checking for ancestor %d of %d '%s' (total files %d)\n",
+				//~ mtime, parent_sought, devfiles[f].id, devfiles[f].name, devfiles_count);
 			for (int j = f - 1; j >= 0; --j) {
 				if (devfiles[j].id == parent_sought) {
 					if (mtime > devfiles[j].mtime) {
 						devfiles[j].mtime = mtime;
 						++devfiles[j].version;
-						debug("   found %d '%s', set mtime %u version %u\n",
+						debug("   updated %d '%s': set mtime %u version %u\n",
 							devfiles[j].id, devfiles[j].name, devfiles[j].mtime, devfiles[j].version);
 					}
 					parent_sought = devfiles[j].parent;
