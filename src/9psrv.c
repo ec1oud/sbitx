@@ -139,6 +139,32 @@ static int read_text(const Devfile *df, char *out, int len, int offset) {
 	return get_console_text(out, len, offset, df->semantic_filter);
 }
 
+static void stat_text_spans(IxpStat *s, const Devfile *df) {
+	// expectation of the file server's user: verify that the struct packs as intended
+	assert(sizeof(text_span_semantic) == sizeof(uint64_t));
+	s->type = 0;
+	s->dev = 0;
+	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
+	// s->qid.type = (df->mode & P9_DMDIR) ? P9_QTDIR : P9_QTFILE;
+	s->qid.type = 0;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = df->version;
+	s->mode = df->mode;
+	s->mtime = console_last_time();
+	s->atime = df->atime;
+	s->length = console_current_spans_length(df->semantic_filter);
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+	debug("stat_text_spans '%s' filter %d len %d mtime %u\n", df->name, df->semantic_filter, s->length, s->mtime);
+}
+
+static int read_text_spans(const Devfile *df, char *out, int len, int offset) {
+	debug("read_text_spans '%s' len %d offset %d\n", df->name, len, offset);
+	return get_console_text_spans((text_span_semantic *)out, len, offset, df->semantic_filter);
+}
+
 #define SEM_NONE STYLE_LOG
 static Devfile devfiles[] = {
 	{ 0, "/", -1, SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
@@ -156,8 +182,9 @@ static Devfile devfiles[] = {
 	{ 2001, "frequency", 2000, SEM_NONE, nil, read_field, "r1:freq", write_field, "r1:freq", DMEXCL|0666, 0, 0, 0 },
 	{ 2002, "if_gain", 2000, SEM_NONE, nil, read_field, "r1:gain", write_field, "r1:gain", DMEXCL|0666, 0, 0, 0 },
 	{ 2003, "received", 2000, STYLE_FT8_RX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
-	//~ { 2004, "received.meta", 2000, nil, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
-	{ 2005, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ 2004, "received.meta", 2000, STYLE_FT8_RX, nil, nil, nil, nil, nil, P9_DMDIR|DMEXCL|0777, 0, 0, 0 },
+	{ 2005, "spans", 2004, STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
+	{ 2006, "sent", 2000, STYLE_FT8_TX, stat_text, read_text, "ft8_1", nil, "", DMEXCL|0666, 0, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
