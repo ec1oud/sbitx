@@ -584,12 +584,16 @@ void fs_open(Ixp9Req *r) {
 			spans_fidaux = findfidaux(r->srv->aux, spans_fidaux + 1);
 		if (spans_fidaux) {
 			data_index = spans_fidaux->data_index;
-			debug("fs_open '%s': got console last line %d from previously-opened '%s'\n", f->file->name, data_index, spans_fidaux->file->name);
+			debug("fs_open '%s': got console last line %d from previous\n", f->file->name, data_index);
+			//debug("fs_open '%s': got console last line %d from previously-opened '%s'\n", f->file->name, data_index, (spans_fidaux->file->name ? spans_fidaux->file->name : "noname"));
+			f->data_index = data_index;
 		}
 	}
-	if (data_index < 0)
-		data_index = console_last_line();
-	f->data_index = data_index;
+	if (!strcmp(f->file->name, "spans")) {
+		if (data_index < 0)
+			data_index = console_last_line();
+		f->data_index = data_index;
+	}
 	debug("fs_open '%s' fd %d aux %p srv-aux %p; console last line %d\n", f->file->name, f->fd, r->aux, r->srv->aux, data_index);
 
 	/*
