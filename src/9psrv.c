@@ -740,38 +740,10 @@ void *run_9p(void *arg) {
 		return nil;
 	}
 
-    char listen_addr[NI_MAXHOST];
-
-	{
-		struct ifaddrs *ifaddr, *ifa;
-		int family, s;
-		char host[NI_MAXHOST];
-
-		if (getifaddrs(&ifaddr) == -1) {
-			perror("start_9p: getifaddrs");
-			return nil;
-		}
-
-		for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-			if (ifa->ifa_addr == NULL)
-				continue;
-
-			if (strncmp(ifa->ifa_name, "lo", 2) && ifa->ifa_addr->sa_family==AF_INET) {
-				int s=getnameinfo(ifa->ifa_addr,sizeof(struct sockaddr_in),host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-				if (s != 0) {
-					printf("start_9p: getnameinfo() failed: %s\n", gai_strerror(s));
-					return nil;
-				}
-				sprintf(listen_addr, "tcp!%s!564", host);
-				printf("start_9p found %s: %s; will listen on %s\n",ifa->ifa_name, host, listen_addr);
-				break;
-			}
-		}
-
-		freeifaddrs(ifaddr);
-	}
+	static const char *listen_addr = "tcp!0.0.0.0!564";
 
 	int fd = ixp_announce(listen_addr);
+	printf("start_9p: listening on %s\n", listen_addr);
 	if(fd < 0) {
 		perror(listen_addr);
 		return nil; // fatal("start_9p: ixp_announce: %s\n", errstr);
