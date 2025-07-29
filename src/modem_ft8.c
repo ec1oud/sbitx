@@ -649,9 +649,14 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
 			message_add("FT8", freq_hz, 0, text);
 
 			char buf[64];
+			const int message_type = ftx_message_get_i3(&message);
+			//~ char type_utf8[4] = {0xE2, message_type ? 0x91 : 0x93, message_type ? 0xA0 + message_type - 1 : 0xAA, 0 };
 			int prefix_len = snprintf(buf, sizeof(buf), "%s %3d %+03d %4d ~ ", time_str, cand->score, cand->snr, freq_hz);
 			int line_len = prefix_len + snprintf(buf + prefix_len, sizeof(buf) - prefix_len, "%s\n", text);
-			LOG(LOG_DEBUG, "-> %s\n", buf);
+			if (message_type) // not type 0
+				LOG(LOG_INFO, ">> %d %s\n", message_type, buf);
+			else // type 0 : we care about the subtype (n3)
+				LOG(LOG_INFO, ">> %d.%d %s\n", message_type, ftx_message_get_n3(&message), buf);
 			//For troubleshooting you can display the time offset - n1qm
 			//sprintf(buff, "%s %d %+03d %-4.0f ~  %s\n", time_str, cand->time_offset,
 			//  cand->snr, freq_hz, message.payload);
@@ -770,6 +775,12 @@ static void ft8_start_tx(int offset_seconds){
 	write_console(STYLE_FT8_TX, buf);
 	message_add("FT8", ft8_pitch, 1, ft8_tx_text);
 
+	const int message_type = ftx_message_get_i3(&ftx_tx_msg);
+	if (message_type) // not type 0
+		LOG(LOG_INFO, "<< %d %s", message_type, buf);
+	else // type 0 : we care about the subtype (n3)
+		LOG(LOG_INFO, "<< %d.%d %s", message_type, ftx_message_get_n3(&ftx_tx_msg), buf);
+
 	ft8_tx_buff_index = offset_seconds * 96000;
 	printf("ft8_start_tx: starting @index %d based on offset_seconds %d\n", ft8_tx_buff_index, offset_seconds);
 }
@@ -782,7 +793,7 @@ static void ft8_start_tx(int offset_seconds){
 	and use this function only when the user is doing the typing.
 */
 void ft8_tx(char *message, int freq){
-	char cmd[200], buff[1000];
+	char cmd[200], buf[64];
 	FILE	*pf;
 	time_t	rawtime = time(NULL);
 	struct tm *t = gmtime(&rawtime);
@@ -795,9 +806,14 @@ void ft8_tx(char *message, int freq){
 		ft8_pitch = freq;
 	}
 	sbitx_ft8_encode(ft8_tx_text, false);
+	const int message_type = ftx_message_get_i3(&ftx_tx_msg);
 
-	sprintf(buff, "%02d%02d%02d  TX     %4d ~ %s\n", t->tm_hour, t->tm_min, t->tm_sec, freq, ft8_tx_text);
-	write_console(STYLE_FT8_QUEUED, buff);
+	snprintf(buf, sizeof(buf), "%02d%02d%02d  TX     %4d ~ %s\n", t->tm_hour, t->tm_min, t->tm_sec, freq, ft8_tx_text);
+	write_console(STYLE_FT8_QUEUED, buf);
+	if (message_type) // not type 0
+		LOG(LOG_INFO, "<- %d %s", message_type, buf);
+	else // type 0 : we care about the subtype (n3)
+		LOG(LOG_INFO, "<- %d.%d %s", message_type, ftx_message_get_n3(&ftx_tx_msg), buf);
 
 	//also set the times of transmission
 	char str_tx1st[10], str_repeat[10];
