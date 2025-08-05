@@ -57,13 +57,13 @@ int logbook_has_power_and_swr() {
 	return ret;
 }
 
-/* writes the output to data/result_rows.txt
+/* writes the output to /tmp/sbitx_result_rows.txt
 	if the from_id is negative, it returns the later 50 records (higher id)
 	if the from_id is positive, it returns the prior 50 records (lower id) */
 
 int logbook_query(char *query, int from_id, char *result_file){
 	sqlite3_stmt *stmt;
-	char statement[200], json[10000], param[2000];
+	char statement[200], param[2000];
 
 	if (db == NULL)
 		logbook_open();
@@ -99,7 +99,7 @@ int logbook_query(char *query, int from_id, char *result_file){
 	//printf("[%s]\n", statement);
 	sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
 
-	const char *output_path = STATEDIR "/result_rows.txt";
+	const char *output_path = "/tmp/sbitx_result_rows.txt";
 	strcpy(result_file, output_path);
 
 	FILE *pf = fopen(output_path, "w");
@@ -549,7 +549,7 @@ int export_adif(char *path, char *start_date, char *end_date){
 
 int logbook_fill(int from_id, int count, const char *query){
 	sqlite3_stmt *stmt;
-	char statement[200], json[10000], param[2000];
+	char statement[200], param[2000];
 
 	if (db == NULL)
 		logbook_open();
