@@ -146,11 +146,9 @@ typedef enum {
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
 
-	QID_MODES = 0x100,
-	QID_MODES_SSB = 0x101,
-	QID_MODES_FT8 = 0x102,
-	QID_SSB_CHANNEL1 = 0x1000,
-	QID_FT8_CHANNEL1 = 0x2000,
+	QID_CHANNELS = 0x100,
+	QID_SSB_CHANNEL1 = 0x101,
+	QID_FT8_CHANNEL1 = 0x201,
 } DevfileID;
 
 typedef enum {
@@ -272,19 +270,15 @@ static Devfile devfiles[] = {
 	// TODO waterfall metadata
 	// TODO audio, power, swr
 
-	{ QID_MODES, "modes", QID_ROOT, SEM_NONE,
+	{ QID_CHANNELS, "channels", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	//~ { QID_MODES_SSB, "ssb", QID_MODES,
-		//~ nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
-	//~ { QID_SSB_CHANNEL1, "1", QID_MODES_SSB,
+	//~ { QID_SSB_CHANNEL1, "1.ssb", QID_CHANNELS,
 		//~ nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	//~ { QID_SSB_CHANNEL1 + QID_CH_FREQ, "frequency", QID_SSB_CHANNEL1,
 		//~ nil, read_field, "r1:freq", write_field, "r1:freq", P9_DMEXCL|0666, 0, 0, 0 },
 	//~ { QID_SSB_CHANNEL1 + QID_CH_IF_GAIN, "if_gain", QID_SSB_CHANNEL1,
 		//~ nil, read_field, "r1:gain", write_field, "r1:gain", P9_DMEXCL|0666, 0, 0, 0 },
-	{ QID_MODES_FT8, "ft8", QID_MODES, SEM_NONE,
-		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1, "1", QID_MODES_FT8, SEM_NONE,
+	{ QID_FT8_CHANNEL1, "1.ft8", QID_CHANNELS, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ, "frequency", QID_FT8_CHANNEL1, SEM_NONE,
