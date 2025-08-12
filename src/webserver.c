@@ -602,10 +602,23 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
     }
     // Check for HTTP->HTTPS redirect *before* other handling
     if (redirect_http_to_https && !c->is_tls) {
-      // Construct the target URL: https://sbitx.local:8443 + original URI
+      char local_ip[INET_ADDRSTRLEN];
+      struct sockaddr_in local_addr;
+      socklen_t addr_len = sizeof(local_addr);
+
+      // Get the local IP address of this connection
+      if (getsockname((int)(intptr_t)c->fd, (struct sockaddr*)&local_addr, &addr_len) == 0) {
+        inet_ntop(AF_INET, &local_addr.sin_addr, local_ip, sizeof(local_ip));
+      } else {
+        perror("getsockname for incoming connection failed: redirecting to sbitx.local");
+        strcpy(local_ip, "sbitx.local");
+      }
+
+      // Construct the target URL: https://<local addr>:8443 + original URI
       char https_url[2048];
-      snprintf(https_url, sizeof(https_url), "https://sbitx.local:8443%.*s",
-               (int)hm->uri.len, hm->uri.buf);
+      snprintf(https_url, sizeof(https_url), "https://%s:8443%.*s",
+               local_ip, (int)hm->uri.len, hm->uri.buf);
+       printf("redirect to %s\n", https_url);
 
       // Construct the Location header string, including Content-Length: 0
       char redir_headers[2100];
