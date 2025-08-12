@@ -1067,6 +1067,19 @@ static void fn(struct mg_connection *c, int ev, void *ev_data) {
           // If file reading failed, serve 404
           mg_http_reply(c, 404, "", "Not found\n");
         }
+      } else if (mg_match(hm->uri, mg_str("/hotspot-detect.html"), NULL)) {
+        char local_ip[INET_ADDRSTRLEN];
+        struct sockaddr_in local_addr;
+        socklen_t addr_len = sizeof(local_addr);
+
+        // Get the local IP address of this connection
+        if (getsockname((int)(intptr_t)c->fd, (struct sockaddr*)&local_addr, &addr_len) == 0) {
+          inet_ntop(AF_INET, &local_addr.sin_addr, local_ip, sizeof(local_ip));
+        } else {
+          strcpy(local_ip, "sbitx.local");
+        }
+        mg_http_reply(c, 200, "Status: 200 OK\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nContent-Type: text/html\r\n",
+          "<H1>Welcome to s/zbitx</H1><H2>On iOS: hit the Cancel button, then select 'Use Without Internet', then visit https://%s:8443</H2>", local_ip);
       } else {
         // Serve other static files normally
         struct mg_http_serve_opts opts = {.root_dir = s_web_root};
