@@ -130,10 +130,22 @@ typedef enum {
 	QID_ROOT = 0,
 	QID_EVENT = 1,
 
+	// standard metadata suffixes
+	QID_META = 2, // directory
+	QID_META_LABEL,
+	QID_META_MIN,
+	QID_META_MAX,
+	QID_META_STEP,
+	QID_META_FLOAT_INT_FMT,
+
+	QID_META_MASK = 0xF, // QID_META_*
+
+	// settings
 	QID_SETTINGS = 0x10,
 	QID_SETTINGS_CALL,
 	QID_SETTINGS_GRID,
 
+	// oddball top-level fields and metadata
 	QID_TEXT = 0x20, // whole console
 	QID_BATTERY,
 	QID_BATT_VOLTAGE,
@@ -146,52 +158,30 @@ typedef enum {
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
 
-	QID_CHANNELS = 0x100,
-	QID_SSB_CHANNEL1 = 0x101,
-	QID_FT8_CHANNEL1 = 0x201,
-} DevfileID;
-
-typedef enum {
-	// common metadata suffixes
-	QID_META = 1, // directory
-	QID_META_MIN,
-	QID_META_MAX,
-	QID_META_STEP,
-	QID_META_FLOAT_INT_FMT,
-	// ideally label would come from the 'struct field' too, but those are uglier (all caps)
-
 	// top-level fields with standard metadata
-	QID_SWR = 0x800,
-	QID_POWER,
-
-	// nonstandard metadata for the above
-	QID_SWR_LABEL = 0x400,
-	QID_POWER_LABEL,
+	QID_SWR = 0x100,
+	QID_POWER = 0x200,
 
 	// channel field-specific metadata
-	QID_CH_FREQ,
+	QID_CH_FREQ = 0x50,
 	QID_CH_FREQ_META,
-	QID_CH_FREQ_LABEL,
-	//~ QID_CH_FREQ_FMT,
-	QID_CH_FREQ_STEP,
-	QID_CH_IF_GAIN,
+	QID_CH_IF_GAIN = 0x60,
 	QID_CH_IF_GAIN_META,
-	QID_CH_IF_GAIN_LABEL,
-	QID_CH_S_METER,
+	QID_CH_S_METER = 0x70,
 	QID_CH_S_METER_META,
-	QID_CH_S_METER_LABEL,
-	//~ QID_CH_S_METER_FMT,
-	QID_CH_DRIVE,
+	QID_CH_DRIVE = 0x80,
 	QID_CH_DRIVE_META,
-	QID_CH_DRIVE_LABEL,
-	QID_CH_RECEIVED,
+	QID_CH_RECEIVED = 0x90,
 	QID_CH_RECEIVED_META,
 	QID_CH_RECEIVED_SPANS,
 	QID_CH_RECEIVED_LINE_INDEX,
-	QID_CH_SENT,
+	QID_CH_SENT = 0xa0,
 	QID_CH_SEND,
-	QID_MASK = 0x4FF // has to accommodate the above, and also QID_META_*
-} FieldDevfileID;
+
+	QID_CHANNELS = 0x1000,
+	QID_SSB_CHANNEL1 = 0x1100,
+	QID_FT8_CHANNEL1 = 0x1200,
+} DevfileID;
 
 /* Global Vars */
 static IxpServer server;
@@ -231,7 +221,7 @@ static Devfile devfiles[] = {
 		nil, read_field, "#vswr", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META, "swr.meta", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_SWR_LABEL, "label", QID_SWR + QID_META,
+	{ QID_SWR + QID_META_LABEL, "label", QID_SWR + QID_META,
 		SEM_NONE, nil, read_field_meta, "#vswr-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_SWR + QID_META_FLOAT_INT_FMT, "format", QID_SWR + QID_META,
 		SEM_NONE, nil, read_field_meta, "#vswr-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
@@ -246,7 +236,7 @@ static Devfile devfiles[] = {
 		nil, read_field, "#fwdpower", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META, "power.meta", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_POWER_LABEL, "label", QID_POWER + QID_META,
+	{ QID_POWER + QID_META_LABEL, "label", QID_POWER + QID_META,
 		SEM_NONE, nil, read_field_meta, "#fwdpower-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_POWER + QID_META_FLOAT_INT_FMT, "format", QID_POWER + QID_META,
 		SEM_NONE, nil, read_field_meta, "#fwdpower-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
@@ -285,15 +275,15 @@ static Devfile devfiles[] = {
 		nil, read_field, "r1:freq", write_field, "r1:freq", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_META, "frequency.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0777, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "r1:freq-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_FREQ_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_FREQ + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_FREQ_META,
 		SEM_NONE, nil, read_field_meta, "#step", write_field, "#step", P9_DMEXCL|0666, 0, 0, 0 },
 	// TODO drive, pitch, tx1st; separate QSO fields and ctl file to transmit?
 
@@ -301,45 +291,45 @@ static Devfile devfiles[] = {
 		nil, read_field, "r1:gain", write_field, "r1:gain", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META, "if_gain.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_IF_GAIN + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_IF_GAIN_META,
 		SEM_NONE, nil, read_field_meta, "r1:gain-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_S_METER, "s", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "#smeter", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_META, "s.meta", QID_FT8_CHANNEL1, SEM_NONE,
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER + QID_CH_S_METER_META, "s.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_S_METER_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1  + QID_CH_S_METER+ QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_S_METER + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_S_METER_META,
 		SEM_NONE, nil, read_field_meta, "#smeter-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE, "drive", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "tx_power", write_field, "tx_power", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_META, "drive.meta", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
-	{ QID_FT8_CHANNEL1 + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
+	{ QID_FT8_CHANNEL1 + QID_CH_DRIVE + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_DRIVE_META,
 		SEM_NONE, nil, read_field_meta, "tx_power-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED, "received", QID_FT8_CHANNEL1,
@@ -368,9 +358,13 @@ static int size_read(Ixp9Req *r, const Devfile *df) {
 
 static int read_name_no_suffix(const Devfile *df, char *out, int len) {
 	char *hyphen_p = strchr(df->read_name, '-');
-	if (!hyphen_p)
-		return stpncpy(out, df->read_name, len) - out;
-	return stpncpy(out, df->read_name, hyphen_p - df->read_name) - out;
+	char *end = NULL;
+	if (hyphen_p)
+		end = stpncpy(out, df->read_name, hyphen_p - df->read_name);
+	else
+		end = stpncpy(out, df->read_name, len);
+	*end = 0;
+	return end - out;
 }
 
 static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
@@ -402,7 +396,7 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 	debug("read_field_meta '%s' 0x%x '%s' -> '%s' len %d offset %d; field min %d max %d step %d\n",
 		df->name, df->id, df->read_name, id, len, offset, min, max, step);
 	if (offset == 0) {
-		switch (df->id & QID_MASK) {
+		switch (df->id & QID_META_MASK) {
 			case QID_SPECTRUM_SPAN_CHOICES: {
 				int r = stpncpy(out, get_field_selections(id), len) - out;
 				// replace slashes with tabs (not sbitx-specific: in general, combobox items could have slashes)
@@ -417,31 +411,27 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 			case QID_META_MAX:
 				return snprintf(out, len, "%d", max);
 			case QID_META_STEP:
+				if ((df->id & QID_CH_FREQ) == QID_CH_FREQ) {
+					step = field_int("STEP");
+					debug("   special for freq step: %d\n", step);
+					return snprintf(out, len, "%d", step);
+				}
 				return snprintf(out, len, "%d", step);
 			case QID_META_FLOAT_INT_FMT:
 				return snprintf(out, len, "%%.0f");
-
-			case QID_CH_FREQ_LABEL:
-				return snprintf(out, len, "Frequency");
-			case QID_CH_FREQ_STEP:
-				step = field_int("STEP");
-				debug("   special for freq step: %d\n", step);
-				return snprintf(out, len, "%d", step);
-
-			case QID_CH_IF_GAIN_LABEL:
-				return snprintf(out, len, "IF");
-
-			case QID_CH_S_METER_LABEL:
-				return snprintf(out, len, "Signal");
-
-			case QID_CH_DRIVE_LABEL:
-				return snprintf(out, len, "Drive");
-
-			case QID_SWR_LABEL:
-				return snprintf(out, len, "SWR");
-
-			case QID_POWER_LABEL:
-				return snprintf(out, len, "Power Out");
+			case QID_META_LABEL:
+				if ((df->id & QID_CH_FREQ) == QID_CH_FREQ)
+					return snprintf(out, len, "Frequency");
+				else if ((df->id & QID_CH_IF_GAIN) == QID_CH_IF_GAIN)
+					return snprintf(out, len, "IF");
+				else if ((df->id & QID_CH_S_METER) == QID_CH_S_METER)
+					return snprintf(out, len, "Signal");
+				else if ((df->id & QID_CH_DRIVE) == QID_CH_DRIVE)
+					return snprintf(out, len, "Drive");
+				else if ((df->id & QID_SWR) == QID_SWR)
+					return snprintf(out, len, "SWR");
+				else if ((df->id & QID_POWER) == QID_POWER)
+					return snprintf(out, len, "Power Out");
 		}
 	}
 	return 0;
@@ -977,7 +967,7 @@ void fs_read(Ixp9Req *r) {
 			return;
 		}
 		r->ofcall.rread.count = f->file->doread(r, f->file, r->ofcall.rread.data, r->ifcall.tread.count, r->ifcall.tread.offset);
-		if ((f->file->id & QID_FT8_CHANNEL1) && (f->file->id & QID_MASK) == QID_CH_RECEIVED && f->data_index >= 0) {
+		if ((f->file->id & QID_FT8_CHANNEL1) && (f->file->id & QID_META_MASK) == QID_CH_RECEIVED && f->data_index >= 0) {
 			// unlock / end transaction, in case new data is coming in. The client will find out about that at the next fs_stat().
 			debug("   qid 0x%x: resetting console last line (was %d)\n", f->file->id, f->data_index);
 			f->data_index = -1;
@@ -1056,7 +1046,7 @@ void fs_open(Ixp9Req *r) {
 	if (!strcmp(f->file->name, "received")) {
 		FidAux *spans_fidaux = findfidaux(r->srv->aux, nil);
 		while (spans_fidaux && spans_fidaux->file &&
-				!((spans_fidaux->file->id & QID_FT8_CHANNEL1) && (spans_fidaux->file->id & QID_MASK) == QID_CH_RECEIVED_SPANS) )
+				!((spans_fidaux->file->id & QID_FT8_CHANNEL1) && (spans_fidaux->file->id & QID_META_MASK) == QID_CH_RECEIVED_SPANS) )
 			spans_fidaux = findfidaux(r->srv->aux, spans_fidaux + 1);
 		if (spans_fidaux) {
 			data_index = spans_fidaux->data_index;
