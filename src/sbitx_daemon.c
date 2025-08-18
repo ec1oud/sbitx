@@ -2905,6 +2905,7 @@ void tx_on(int trigger)
 		set_operating_freq(atoi(freq->value), response);
 		sdr_request("tx=on", response);
 		update_field(get_field("r1:freq"));
+		notify_field_changed("#tx", NULL, NULL);
 		// printf("TX\n");
 		//	printf("ext_ptt_enable value: %d\n", ext_ptt_enable); //Added to debug the switch. W2JON
 		//	printf("eq_enable value: %d\n", eq_is_enabled); //Added to debug the switch. W2JON
@@ -2948,6 +2949,7 @@ void tx_off()
 		struct field *freq = get_field("r1:freq");
 		set_operating_freq(atoi(freq->value), response);
 		update_field(get_field("r1:freq"));
+		notify_field_changed("#tx", NULL, NULL);
 		// printf("RX\n");
 	}
 	sound_input(0); // it is a low overhead call, might as well be sure
