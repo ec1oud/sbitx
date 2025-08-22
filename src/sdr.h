@@ -98,7 +98,7 @@ for the transmission. The data required is the same!
 */
 
 extern float fft_bins[];
-extern int spectrum_plot[];
+extern int8_t spectrum_plot[];
 extern struct filter *ssb;
 
 //vfo definitions

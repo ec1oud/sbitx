@@ -372,7 +372,7 @@ int data_delay = 700;
 #define MAX_RIT 25000
 
 int spectrum_span = 48000;
-extern int spectrum_plot[];
+extern int8_t spectrum_plot[];
 extern int fwdpower, vswr;
 extern sbitx_hw_version_t sbitx_hw_version;
 
@@ -1635,11 +1635,7 @@ void sdr_modulation_update(int32_t *samples, int count, double scale_up)
 	}
 }
 
-static int waterfall_offset = 30;
-static float wf_offset = 0; // updated in draw_waterfall
-static int wf[(MAX_BINS / 2) * sizeof(int)];
-//~ GdkPixbuf *waterfall_pixbuf = NULL;
-uint8_t *waterfall_map = NULL;
+static const int waterfall_offset = 30; // TODO why?
 
 void init_waterfall()
 {
@@ -1686,12 +1682,6 @@ void init_waterfall()
 
 	// Print dimensions for debugging -W2ON
 	// printf("Waterfall dimensions: width = %d, height = %d\n", f->width, f->height);
-	memset(wf, 0, (MAX_BINS / 2) * sizeof(int));
-
-	if (waterfall_map)
-	{
-		free(waterfall_map);
-	}
 }
 
 void update_field(struct field *f){
@@ -1705,28 +1695,21 @@ void update_field(struct field *f){
 	Get the most recent line of 8-bit waterfall intensity values in the range [0, 255].
 	\a max should be (ideally) MAX_BINS / 2.
 */
-int get_spectrum_8bit(uint8_t *buf, int max)
+int get_spectrum_8bit(int8_t *buf, int max)
 {
 	const float min_db = (wf_min - 1.0f) * 100.0f;
 	const float max_db = 100.0f * wf_max;
 	const bool autoscope = !strcmp(field_str("AUTOSCOPE"), "ON");
-	max = MIN(max, MAX_BINS / 2);
+	max = MIN(max, 1803 - 1269);
 	// TODO perhaps resample data to given width, if caller needs it narrower?
+	//~ int8_t vmin = 127;
+	//~ int8_t vmax = -127;
 	for (int i = 0; i < max; ++i) {
-		// Scale the input value
-		const float scaled_value = wf[i] * 2.4;
-
-		// Normalize and clamp data to the range [0, 255] based on adjusted min/max
-		 float normalized = 255.0f * (autoscope ?
-			(scaled_value - wf_offset) / (max_db - wf_offset)  :
-			(scaled_value - min_db) / (max_db - min_db) );
-		if (normalized < 0.0f)
-			normalized = 0.0f;
-		else if (normalized > 255.0f)
-			normalized = 255.0f;
-
-		buf[i] = (uint8_t)lroundf(normalized);
+		buf[i] = (uint8_t)spectrum_plot[i + 1269];
+		//~ vmin = buf[i] < vmin ? buf[i] : vmin;
+		//~ vmax = buf[i] > vmax ? buf[i] : vmax;
 	}
+	//~ printf("get_spectrum_8bit: min %d max %d\n", vmin, vmax);
 	return max;
 }
 

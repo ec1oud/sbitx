@@ -16,7 +16,7 @@
 
 extern int ext_ptt_enable;
 extern int display_freq;
-extern int spectrum_plot[];
+extern int8_t spectrum_plot[];
 
 // A mixed bag of named styles used in various places in various UIs.
 typedef enum {
@@ -128,6 +128,6 @@ int macro_exec(int key, char *dest);
 void macro_label(int fn_key, char *label);
 void macro_list(char *output);
 void macro_get_keys(char *output);
-int get_spectrum_8bit(uint8_t *buf, int max);
+int get_spectrum_8bit(int8_t *buf, int max);
 
 #endif // SDR_UI_H

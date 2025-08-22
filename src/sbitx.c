@@ -54,7 +54,7 @@ int fwdpower_cnt;
 
 float fft_bins[MAX_BINS]; // spectrum ampltiudes
 float spectrum_window[MAX_BINS];
-int spectrum_plot[MAX_BINS];
+int8_t spectrum_plot[MAX_BINS];
 fftw_complex *fft_spectrum;
 fftw_plan plan_spectrum;
 
@@ -309,15 +309,20 @@ void spectrum_update()
 
 	// this has been hand optimized to lower
 	// the inordinate cpu usage
+	// min/max can be used for sanity check
+	//~ int8_t min = 127;
+	//~ int8_t max = -127;
 	for (int i = 1269; i < 1803; i++)
 	{
-
 		fft_bins[i] = ((1.0 - spectrum_speed) * fft_bins[i]) +
 					  (spectrum_speed * cabs(fft_spectrum[i]));
 
-		int y = power2dB(cnrmf(fft_bins[i]));
+		const int8_t y = (int8_t)power2dB(cnrmf(fft_bins[i]));
 		spectrum_plot[i] = y;
+		//~ min = y < min ? y : min;
+		//~ max = y > max ? y : max;
 	}
+	//~ printf("spectrum_update(): min %d max %d\n", min, max);
 }
 /*
 static int create_mcast_socket(){
