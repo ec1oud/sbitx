@@ -1695,21 +1695,12 @@ void update_field(struct field *f){
 	Get the most recent line of 8-bit waterfall intensity values in the range [0, 255].
 	\a max should be (ideally) MAX_BINS / 2.
 */
-int get_spectrum_8bit(int8_t *buf, int max)
+int get_spectrum_8bit(int8_t *buf, int max, int offset)
 {
-	const float min_db = (wf_min - 1.0f) * 100.0f;
-	const float max_db = 100.0f * wf_max;
-	const bool autoscope = !strcmp(field_str("AUTOSCOPE"), "ON");
-	max = MIN(max, 1803 - 1269);
+	max = MIN(max, MAX_BINS / 2 - offset);
 	// TODO perhaps resample data to given width, if caller needs it narrower?
-	//~ int8_t vmin = 127;
-	//~ int8_t vmax = -127;
-	for (int i = 0; i < max; ++i) {
-		buf[i] = (uint8_t)spectrum_plot[i + 1269];
-		//~ vmin = buf[i] < vmin ? buf[i] : vmin;
-		//~ vmax = buf[i] > vmax ? buf[i] : vmax;
-	}
-	//~ printf("get_spectrum_8bit: min %d max %d\n", vmin, vmax);
+	if (max > 0)
+		memcpy(buf, spectrum_plot + offset, max);
 	return max;
 }
 
@@ -3583,12 +3574,16 @@ int web_get_console(char *buff, int max)
 
 void web_get_spectrum(char *buff)
 {
-	int n_bins = (int)((1.0 * spectrum_span) / 46.875);
+	int n_bins = (int)(spectrum_span / 46.779);
+	if (n_bins > MAX_BINS / 2)
+		n_bins = MAX_BINS / 2;
 	// the center frequency is at the center of the lower sideband,
-	// i.e, three-fourth way up the bins.
-	int starting_bin = (3 * MAX_BINS) / 4 - n_bins / 2;
+	// halfway up the bins.
+	int starting_bin = MAX_BINS / 4 - n_bins / 2;
+	if (starting_bin < 0)
+		starting_bin = 0;
 	int ending_bin = starting_bin + n_bins;
-
+	//~ printf("web_get_spectrum: bins %d to %d, n_bins %d for span %d\n", starting_bin, ending_bin, n_bins, spectrum_span);
 	int j = 3;
 	if (in_tx)
 	{
@@ -3607,7 +3602,7 @@ void web_get_spectrum(char *buff)
 	else
 	{
 		strcpy(buff, "RX ");
-		for (int i = starting_bin; i <= ending_bin; i++)
+		for (int i = starting_bin; i < ending_bin; i++)
 		{
 			int y = spectrum_plot[i] + waterfall_offset;
 			if (y > 95)
@@ -3809,8 +3804,8 @@ void zbitx_get_spectrum(char *buff){
 
   int n_bins = (int)((1.0 * spectrum_span) / 46.875);
   //the center frequency is at the center of the lower sideband,
-  //i.e, three-fourth way up the bins.
-  int starting_bin = (3 *MAX_BINS)/4 - n_bins/2;
+  //i.e, halfway up the bins.
+  int starting_bin = MAX_BINS / 4 - n_bins / 2;
   int ending_bin = starting_bin + n_bins;
 
   int j;

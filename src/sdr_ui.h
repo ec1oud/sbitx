@@ -128,6 +128,8 @@ int macro_exec(int key, char *dest);
 void macro_label(int fn_key, char *label);
 void macro_list(char *output);
 void macro_get_keys(char *output);
-int get_spectrum_8bit(int8_t *buf, int max);
+/// copies one line of 1024 signed 8-bit bins in units of dB; non-meaningful bins are zeroes
+/// returns the number of bins (bytes) copied
+int get_spectrum_8bit(int8_t *buf, int max, int offset);
 
 #endif // SDR_UI_H

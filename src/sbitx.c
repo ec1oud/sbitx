@@ -54,7 +54,7 @@ int fwdpower_cnt;
 
 float fft_bins[MAX_BINS]; // spectrum ampltiudes
 float spectrum_window[MAX_BINS];
-int8_t spectrum_plot[MAX_BINS];
+int8_t spectrum_plot[MAX_BINS / 2];
 fftw_complex *fft_spectrum;
 fftw_plan plan_spectrum;
 
@@ -318,7 +318,7 @@ void spectrum_update()
 					  (spectrum_speed * cabs(fft_spectrum[i]));
 
 		const int8_t y = (int8_t)power2dB(cnrmf(fft_bins[i]));
-		spectrum_plot[i] = y;
+		spectrum_plot[i - 1024] = y;
 		//~ min = y < min ? y : min;
 		//~ max = y > max ? y : max;
 	}

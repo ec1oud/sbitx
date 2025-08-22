@@ -512,15 +512,9 @@ static void stat_raw(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) 
 }
 
 static int read_raw(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
-	//~ debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
-	static int8_t data[MAX_BINS / 2];
-	if (df->id == QID_SPECTRUM) {
-		if (offset == 0)
-			get_spectrum_8bit(data, MAX_BINS / 2);
-		const int toread = MIN(len, sizeof(data) - offset);
-		memcpy(out, data + offset, toread);
-		return toread;
-	}
+	debug("read_raw '%s' 0x%x len %d offset %d\n", df->name, df->id, len, offset);
+	if (df->id == QID_SPECTRUM)
+		return get_spectrum_8bit(out, len, offset);
 	printf("warning: unknown raw data source '%s'\n", df->name);
 	return 0;
 }
