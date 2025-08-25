@@ -12,3 +12,12 @@ bool logbook_grid_exists(char *id);
 bool logbook_caller_exists(char * id);
 void logbook_delete(int id);
 void message_add(char *mode, unsigned int frequency, int outgoing, char *message);
+
+// ADIF export
+// start_date can be null or empty if you want all records, unrestricted
+void *prepare_query_by_date(const char *start_date, const char *end_date);
+bool logbook_next(void *stmt);
+void logbook_end_query(void *stmt);
+int write_adif_header(char *buf, int len, const char *source);
+int write_adif_record(void *stmt, char *buf, int len);
+int export_adif(const char *path, const char *start_date, const char *end_date, const char *source);

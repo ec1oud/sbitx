@@ -39,6 +39,7 @@
 
 #include <ixp.h>
 
+#include "logbook.h"
 #include "modem_ft8.h"
 #include "sdr_ui.h"
 
@@ -65,10 +66,13 @@
 typedef struct Devfile Devfile;
 typedef struct FidAux FidAux;
 typedef struct ClientEvents ClientEvents;
+typedef struct ClientFileSession ClientFileSession;
 static Devfile *find_by_field_id(const char *read_name);
 static Devfile *find_by_id(uint64_t id);
 static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
 static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
+static void stat_length_unknown(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index);
+static int read_logbook(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static int size_read(Ixp9Req *r, const Devfile *df);
 static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
 static int read_state(Ixp9Req *r, const Devfile *df, char *out, int len, int offset);
@@ -118,6 +122,14 @@ struct ClientEvents {
 	int byte_len; // length in bytes of all Devfile->names listed in `changed`
 };
 
+struct ClientFileSession { // just for the database so far; other things if necessary
+	void *srvaux; // client_id from the attach call
+	const Devfile *open_file;
+	void *session; // sqlite3_stmt*
+	int record_len; // not used yet; could be for resuming in next read, if record was too long for client's buffer
+	int record_read_offset; // not used yet
+};
+
 /* Error Messages */
 static char
 	Enoperm[] = "permission denied",
@@ -145,8 +157,12 @@ typedef enum {
 	QID_SETTINGS_CALL,
 	QID_SETTINGS_GRID,
 
+	// logbook
+	QID_LOGBOOK = 0x20,
+	QID_LOGBOOK_ALL_ADIF,
+
 	// oddball top-level fields and metadata
-	QID_TEXT = 0x20, // whole console
+	QID_TEXT = 0x30, // whole console
 	QID_BATTERY,
 	QID_BATT_VOLTAGE,
 	QID_STATE,
@@ -199,12 +215,18 @@ static Devfile devfiles[] = {
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_EVENT, "event", QID_ROOT, SEM_NONE,
 		stat_event, read_event, nil, nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_SETTINGS, "settings", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SETTINGS_CALL, "callsign", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#mycallsign", write_field, "#mycallsign", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_GRID, "grid", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#mygrid", write_field, "#mygrid", P9_DMEXCL|0666, 0, 0, 0 },
+
+	{ QID_LOGBOOK, "logbook", QID_ROOT, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_LOGBOOK_ALL_ADIF, "all.adif", QID_LOGBOOK, SEM_NONE,
+		stat_length_unknown, read_logbook, nil, nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_TEXT, "text", QID_ROOT, SEM_NONE,
 		stat_text, read_text, "#console", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
@@ -348,7 +370,8 @@ static Devfile devfiles[] = {
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
 static FidAux open_fds[MAX_OPEN_FDS];
-static ClientEvents client_data[MAX_CLIENTS];
+static ClientEvents client_event_data[MAX_CLIENTS];
+static ClientFileSession client_file_session_data[MAX_CLIENTS];
 
 /* Functions */
 static int size_read(Ixp9Req *r, const Devfile *df) {
@@ -626,25 +649,28 @@ static void usage() {
 static FidAux* newfidaux(Devfile *df, void *srvaux) {
 	if (df->id == QID_EVENT) {
 		bool notfound = TRUE;
-		// find srvaux in client_data
+		// find srvaux in client_event_data
 		for (int i = 0; i < MAX_CLIENTS && notfound; ++i) {
-			if (client_data[i].srvaux == srvaux) {
+			if (client_event_data[i].srvaux == srvaux) {
 				notfound = FALSE;
-				debug("newfidaux(srv-aux %p): found client_data idx %d for event file\n", srvaux, i);
+				debug("newfidaux(srv-aux %p): found client_event_data idx %d for event file\n", srvaux, i);
 			}
 		}
 		if (notfound) {
-			// find an empty slot in client_data
+			// find an empty slot in client_event_data
 			for (int i = 0; i < MAX_CLIENTS; ++i) {
-				if (!client_data[i].srvaux) {
-					// TODO memset to clear this entry? nah, do it on detach
-					client_data[i].srvaux = srvaux;
-					debug("newfidaux(srv-aux %p): chose client_data idx %d for event file\n", srvaux, i);
+				if (!client_event_data[i].srvaux) {
+					// TODO memset to clear this entry? nah, do it in fs_clunk
+					client_event_data[i].srvaux = srvaux;
+					debug("newfidaux(srv-aux %p): chose client_event_data idx %d for event file\n", srvaux, i);
 					break;
 				}
 			}
 		}
 	}
+	// for logbook, creating a new ClientFileSession is done in find_client_file_session_data();
+	// could alternatively be done here: then we'd want a switch(df->id)
+
 	// find an empty slot in open_fds
 	for (int i = 0; i < MAX_OPEN_FDS; ++i) {
 		if (!open_fds[i].file) {
@@ -671,13 +697,40 @@ static FidAux *findfidaux(void *srvaux, FidAux *start_from) {
 	return nil;
 }
 
-static ClientEvents *find_client_data(void *srvaux, ClientEvents *start_from) {
-	const int startfrom_idx = start_from ? start_from - client_data : 0;
-	//~ if (start_from) debug("find_client_data: start from %p rather than %p: index %d\n", start_from, client_data, startfrom_idx);
+static ClientEvents *find_client_event_data(void *srvaux, ClientEvents *start_from) {
+	const int startfrom_idx = start_from ? start_from - client_event_data : 0;
+	//~ if (start_from) debug("find_client_event_data: start from %p rather than %p: index %d\n", start_from, client_event_data, startfrom_idx);
 	for (int i = startfrom_idx; i < MAX_CLIENTS; ++i)
-		if (client_data[i].srvaux == srvaux)
-			return &client_data[i];
+		if (client_event_data[i].srvaux == srvaux)
+			return &client_event_data[i];
 	return nil;
+}
+
+static ClientFileSession *find_client_file_session_data(void *srvaux, const Devfile *df, ClientFileSession *start_from) {
+	const int startfrom_idx = start_from ? start_from - client_file_session_data : 0;
+	//~ if (start_from) debug("find_client_file_session_data: start from %p rather than %p: index %d\n", start_from, find_client_file_session_data, startfrom_idx);
+	for (int i = startfrom_idx; i < MAX_CLIENTS; ++i)
+		if (client_file_session_data[i].srvaux == srvaux && client_file_session_data[i].open_file == df)
+			return &client_file_session_data[i];
+	// not found: create a session
+	switch (df->id) {
+	case QID_LOGBOOK_ALL_ADIF: {
+		// logbook database:
+		// find an empty slot in client_file_session_data
+		for (int i = 0; i < MAX_CLIENTS; ++i) {
+			if (!client_file_session_data[i].srvaux) {
+				// TODO memset to clear this entry? nah, do it in fs_clunk
+				client_file_session_data[i].srvaux = srvaux;
+				client_file_session_data[i].open_file = df;
+				debug("find_client_file_session_data(srv-aux %p): chose client_file_session_data idx %d for file %lld\n", srvaux, i, df->id);
+				return &client_file_session_data[i];
+			}
+		}
+	};
+	default:
+		break;
+	}
+	return nil; // not found, not created either (should not happen unless MAX_CLIENTS exceeded)
 }
 
 static Devfile *find_file(const char *name, int start_from_idx) {
@@ -730,33 +783,31 @@ void notify_field_changed(const char *field_id, const char *old, const char *new
 	if (df) {
 		//~ debug("notify_field_changed: '%s' found 0x%X: newval '%s'\n", field_id, df ? df->id : 0, newval);
 		for (int i = 0; i < MAX_CLIENTS; ++i)
-			if (client_data[i].srvaux) {
+			if (client_event_data[i].srvaux) {
 				if (old && !strncmp(old, newval, 64))
 					return; // no change in value
 				bool notfound = TRUE;
 				for (int j = 0; j < MAX_EVENTS && notfound; ++j)
-					if (client_data[i].changed[j] == df)
+					if (client_event_data[i].changed[j] == df)
 						notfound = FALSE;
 				if (notfound) {
 					char tmp[MAX_PATH_SUFFIX_SIZE];
-					client_data[i].changed[client_data[i].count++] = df;
+					client_event_data[i].changed[client_event_data[i].count++] = df;
 					// line length approximation: path len + tab + value len + newline
 					// the value will be up-to-date when the client reads it: not necessarily same as strlen(newval)
-					client_data[i].byte_len += pathcpy_recur(df, tmp, sizeof(tmp)) + 2 + (newval ? strlen(newval) : 0);
-					//~ debug("added '%s' to events: byte_len now %d\n", tmp, client_data[i].byte_len);
+					client_event_data[i].byte_len += pathcpy_recur(df, tmp, sizeof(tmp)) + 2 + (newval ? strlen(newval) : 0);
+					//~ debug("added '%s' to events: byte_len now %d\n", tmp, client_event_data[i].byte_len);
 				}
 			}
 	}
 }
 
 static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
-	ClientEvents *cd = find_client_data(r->srv->aux, client_data);
+	ClientEvents *cd = find_client_event_data(r->srv->aux, client_event_data);
 
 	s->type = 0;
 	s->dev = 0;
-	// P9_DMDIR is 0x80000000; we send back QID type 0x80 if it's a directory, 0 if not
-	// s->qid.type = (df->mode & P9_DMDIR) ? P9_P9_QTDIR : P9_QTFILE;
-	s->qid.type = 0;
+	s->qid.type = P9_QTFILE;
 	s->qid.path = df->id; // fake "inode"
 	s->qid.version = df->version;
 	s->mode = df->mode;
@@ -772,7 +823,7 @@ static void stat_event(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index
 }
 
 static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
-	ClientEvents *cd = find_client_data(r->srv->aux, client_data);
+	ClientEvents *cd = find_client_event_data(r->srv->aux, client_event_data);
 	char *end = out;
 	if (cd) {
 		for (int i = 0; i < cd->count; ++i) {
@@ -801,6 +852,53 @@ static int read_event(Ixp9Req *r, const Devfile *df, char *out, int len, int off
 		memset(cd->changed, 0, sizeof(cd->changed));
 	}
 	return end - out;
+}
+
+static void stat_length_unknown(Ixp9Req *r, IxpStat *s, const Devfile *df, int data_index) {
+	s->type = 0;
+	s->dev = 0;
+	s->qid.type = P9_QTFILE;
+	s->qid.path = df->id; // fake "inode"
+	s->qid.version = df->version;
+	s->mode = df->mode;
+	s->mtime = console_last_time();
+	s->atime = df->atime;
+	s->length = 1; // it's ridiculous to run a DB query and format the output just to sum up the data length (isn't it?)
+	s->name = df->name;
+	s->uid = user;
+	s->gid = user;
+	s->muid = user;
+	debug("stat_logbook srv-aux %p len %d mtime %u version %u\n",
+		r->srv->aux, s->length, s->mtime, s->qid.version);
+}
+
+static int read_logbook(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
+	ClientFileSession *cd = find_client_file_session_data(r->srv->aux, df, client_file_session_data);
+	debug("read_logbook srv-aux %p len %d offset %d: found ClientFileSession %p sqlite session %p\n",
+		r->srv->aux, len, offset, cd, (cd ? cd->session : NULL));
+	if (cd) { // or assert?
+		bool isNew = false;
+		if (!cd->session) {
+			debug("   preparing logbook query\n");
+			cd->session = prepare_query_by_date(NULL, NULL); // all records; save sqlite3_stmt * for next time
+			isNew = true;
+		}
+
+		char *end = out;
+		//~ int rowCount = sqlite3_stmt_status(cd->session, SQLITE_STMTSTATUS_RUN, false); // alternative to isNew
+		if (isNew) {
+			end += write_adif_header(out, len, "9p daemon");
+			printf("   wrote ADIF header: %d bytes\n", end - out);
+		}
+
+		// just read one record; if there are comments, more could be too long for typical len == 4096 case
+		if (logbook_next(cd->session))
+			end += write_adif_record(cd->session, end, len);
+		//~ printf("row %d: %s", rowCount, out);
+		printf("   read_logbook: returned %d bytes\n", end - out);
+		return end - out;
+	}
+	return 0;
 }
 
 static void dostat(Ixp9Req *r, IxpStat *s, const Devfile *df, int index) {
@@ -837,7 +935,7 @@ void fs_attach(Ixp9Req *r) {
 	r->fid->qid.type = P9_QTDIR;
 	r->fid->qid.path = (uintptr_t)r->fid;
 	r->fid->aux = newfidaux(devfiles, (void*)next_client_id);
-	// TODO return client_data ptr as srv->aux for this client rather than just using a recognizable fake pointer?
+	// TODO return client_event_data ptr as srv->aux for this client rather than just using a recognizable fake pointer?
 	r->srv->aux = (void*)next_client_id;
 	r->ofcall.rattach.qid = r->fid->qid;
 	ixp_respond(r, nil);
@@ -1148,7 +1246,8 @@ void *run_9p(void *arg) {
 	}
 
 	memset(open_fds, 0, sizeof(open_fds));
-	memset(client_data, 0, sizeof(client_data));
+	memset(client_event_data, 0, sizeof(client_event_data));
+	memset(client_file_session_data, 0, sizeof(client_file_session_data));
 	start_time = time(nil);
 
 	IxpConn *acceptor = ixp_listen(&server, fd, &p9srv, ixp_serve9conn, NULL);
