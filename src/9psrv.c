@@ -47,6 +47,8 @@
 // TODO output timestamps
 #define fatal(...) ixp_eprint("fatal: " __VA_ARGS__)
 #define debug(...) if(debuglevel) fprintf(stderr, __VA_ARGS__)
+
+/* Definitions */
 #define QID(t, i) ((int64_t)(t))
 #ifndef TRUE
 #define TRUE 1
@@ -201,7 +203,7 @@ typedef enum {
 static IxpServer server;
 static pid_t pid = 0;
 static char *user;
-static int debuglevel = 1;
+static int debuglevel = 0;
 static time_t start_time;
 static char *argv0;
 static int connected_clients = 0;
