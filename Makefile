@@ -75,6 +75,10 @@ ifeq ("$(wildcard $(DESTDIR)/$(STATEDIR)/sbitx.db)","")
 	$(shell sqlite3 $(DESTDIR)/$(STATEDIR)/sbitx.db < data/create_db.sql)
 endif
 
+installweb:
+	install -d --owner=$(OWNER) --group=$(OWNER) $(DESTDIR)/$(SHAREDIR)/web
+	install -m 644 --owner=$(OWNER) --group=$(OWNER) web/* $(DESTDIR)/$(SHAREDIR)/web ||:
+
 uninstall:
 	rm -f $(DESTDIR)/$(BINDIR)/$(TARGET)
 	rm -rf $(DESTDIR)/$(SHAREDIR)
