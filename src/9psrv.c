@@ -143,19 +143,23 @@ typedef enum {
 	QID_EVENT = 1,
 
 	// standard metadata suffixes
-	QID_META = 2, // directory
-	QID_META_LABEL,
-	QID_META_MIN,
-	QID_META_MAX,
-	QID_META_STEP,
-	QID_META_FLOAT_INT_FMT,
+	QID_META = 0x1000000, // directory
+	QID_META_META = 0x10000000, // directory
+	QID_META_LABEL = 0x2000000,
+	QID_META_MIN = 0x3000000,
+	QID_META_MAX = 0x4000000,
+	QID_META_STEP = 0x5000000,
+	QID_META_FLOAT_INT_FMT = 0x6000000,
+	QID_META_CHOICES = 0x7000000,
 
-	QID_META_MASK = 0xF, // QID_META_*
+	QID_META_MASK = 0xF000000, // QID_META_* (but not QID_META_META)
 
 	// settings
 	QID_SETTINGS = 0x10,
 	QID_SETTINGS_CALL,
 	QID_SETTINGS_GRID,
+	QID_SETTINGS_XOTA,
+	QID_SETTINGS_XOTA_LOC,
 
 	// logbook
 	QID_LOGBOOK = 0x20,
@@ -167,10 +171,7 @@ typedef enum {
 	QID_BATT_VOLTAGE,
 	QID_STATE,
 	QID_SPECTRUM,
-	QID_SPECTRUM_META,
 	QID_SPECTRUM_SPAN,
-	QID_SPECTRUM_SPAN_META,
-	QID_SPECTRUM_SPAN_CHOICES,
 	QID_SPECTRUM_WIDTH,
 	QID_SPECTRUM_DEPTH,
 
@@ -203,7 +204,7 @@ typedef enum {
 static IxpServer server;
 static pid_t pid = 0;
 static char *user;
-static int debuglevel = 0;
+static int debuglevel = 1;
 static time_t start_time;
 static char *argv0;
 static int connected_clients = 0;
@@ -222,6 +223,14 @@ static Devfile devfiles[] = {
 		nil, read_field, "#mycallsign", write_field, "#mycallsign", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_GRID, "grid", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#mygrid", write_field, "#mygrid", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_SETTINGS_XOTA, "xota", QID_SETTINGS, SEM_NONE,
+		nil, read_field, "#xota", write_field, "#xota", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_SETTINGS_XOTA_LOC, "xota-loc", QID_SETTINGS, SEM_NONE,
+		nil, read_field, "#xota_loc", write_field, "#xota_loc", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_SETTINGS_XOTA + QID_META, "xota.meta", QID_SETTINGS, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_SETTINGS_XOTA + QID_META_CHOICES, "choices", QID_SETTINGS_XOTA + QID_META, SEM_NONE,
+		nil, read_field_meta, "#xota-choices", nil, nil, P9_DMEXCL|0666, 0, 0, 0 },
 
 	{ QID_LOGBOOK, "logbook", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
@@ -271,13 +280,13 @@ static Devfile devfiles[] = {
 
 	{ QID_SPECTRUM, "spectrum", QID_ROOT, SEM_NONE,
 		stat_raw, read_raw, "", nil, "", P9_DMEXCL|0666, 0, 0, 0 },
-	{ QID_SPECTRUM_META, "spectrum.meta", QID_ROOT, SEM_NONE,
+	{ QID_SPECTRUM + QID_META, "spectrum.meta", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_SPECTRUM_SPAN, "span", QID_SPECTRUM_META, SEM_NONE,
+	{ QID_SPECTRUM_SPAN, "span", QID_SPECTRUM + QID_META, SEM_NONE,
 		nil, read_field, "#span", write_field, "#span", P9_DMEXCL|0666, 0, 0, 0 },
-	{ QID_SPECTRUM_SPAN_META, "span.meta", QID_SPECTRUM_META, SEM_NONE,
+	{ QID_SPECTRUM_SPAN + QID_META_META, "span.meta", QID_SPECTRUM + QID_META, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
-	{ QID_SPECTRUM_SPAN_CHOICES, "choices", QID_SPECTRUM_SPAN_META, SEM_NONE,
+	{ QID_SPECTRUM_SPAN + QID_META_META + QID_META_CHOICES, "choices", QID_SPECTRUM_SPAN + QID_META_META, SEM_NONE,
 		nil, read_field_meta, "#span-choices", nil, nil, P9_DMEXCL|0666, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr
@@ -419,7 +428,7 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 		df->name, df->id, df->read_name, id, len, offset, min, max, step);
 	if (offset == 0) {
 		switch (df->id & QID_META_MASK) {
-			case QID_SPECTRUM_SPAN_CHOICES: {
+			case QID_META_CHOICES: {
 				int r = stpncpy(out, get_field_selections(id), len) - out;
 				// replace slashes with tabs (not sbitx-specific: in general, combobox items could have slashes)
 				for (int i = 0; i < r; ++i)
