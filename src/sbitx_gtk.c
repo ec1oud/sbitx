@@ -906,6 +906,10 @@ struct field main_controls[] = {
 	 "", 4, 6, 1, 0},
 	{"#passkey", NULL, 1000, -1000, 400, 149, "PASSKEY", 70, "123", FIELD_TEXT, STYLE_SMALL,
 	 "", 0, 32, 1, 0},
+	{"#xota_loc", NULL, 1000, -1000, 400, 149, "LOCATION", 70, "PEAK/PARK/ISLE", FIELD_TEXT, STYLE_SMALL,
+	 "", 0, 32, 1, 0},
+	{"#xota", NULL, 1000, -1000, 400, 149, "xOTA", 40, "", FIELD_SELECTION, STYLE_FIELD_VALUE,
+	 "NONE/IOTA/SOTA/POTA", 0, 0, 0, COMMON_CONTROL},
 
 	// moving global variables into fields
 	{"#vfo_a_freq", NULL, 1000, -1000, 50, 50, "VFOA", 40, "14000000", FIELD_NUMBER, STYLE_FIELD_VALUE,
