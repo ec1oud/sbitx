@@ -32,6 +32,8 @@ create table logbook (
 	tx_id	TEXT DEFAULT "",
 	tx_power TEXT DEFAULT "",
 	vswr TEXT DEFAULT "",
+	xota TEXT DEFAULT "",
+	xota_loc TEXT DEFAULT "",
 	comments TEXT DEFAULT ""
 );
 

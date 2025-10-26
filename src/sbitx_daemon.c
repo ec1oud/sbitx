@@ -1477,6 +1477,8 @@ void enter_qso()
 				get_field("#exchange_received")->value,
 				last_fwdpwr,
 				last_swr,
+				get_field("#xota")->value,
+				get_field("#xota_loc")->value,
 				get_field("#text_in")->value);
 
 	char buff[100];

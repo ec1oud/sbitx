@@ -37,7 +37,7 @@ static sqlite3 *db=NULL;
 void logbook_open();
 int logbook_fill(int from_id, int count, const char *query);
 
-int logbook_has_power_and_swr() {
+int logbook_has_power_swr_xota() {
 	static int ret = -1;
 	if (ret < 0) {
 		sqlite3_stmt *stmt;
@@ -50,7 +50,7 @@ int logbook_has_power_and_swr() {
 		assert(sqlite3_column_count(stmt));
 		assert(sqlite3_column_type(stmt, 0) == SQLITE3_TEXT);
 		const char *sql = sqlite3_column_text(stmt, 0); // a CREATE TABLE command
-		ret = (strstr(sql, "tx_power") && strstr(sql, "vswr"));
+		ret = (strstr(sql, "tx_power") && strstr(sql, "vswr") && strstr(sql, "xota"));
 		sqlite3_finalize(stmt);
 	}
 	return ret;
@@ -342,7 +342,8 @@ void message_add(char *mode, unsigned int frequency, int outgoing, char *message
 }
 
 void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
-		char *rst_recv, char *exchange_recv, int tx_power, int tx_vswr, char *comments){
+		char *rst_recv, char *exchange_recv, int tx_power, int tx_vswr,
+		char *xota, char *xota_loc, char *comments){
 	char statement[1000], *err_msg, date_str[11], time_str[5];
 	char freq[12], log_freq[12], mode[10], mycallsign[12];
 
@@ -358,14 +359,14 @@ void logbook_add(char *contact_callsign, char *rst_sent, char *exchange_sent,
 	sprintf(date_str, "%04d-%02d-%02d", tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday);
 	sprintf(time_str, "%02d%02d", tmp->tm_hour, tmp->tm_min);
 
-	if (logbook_has_power_and_swr()) {
+	if (logbook_has_power_swr_xota()) {
 		sprintf(statement,
 			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
-			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, tx_power, vswr, comments) "
-			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%d.%d','%d.%d','%s');",
+			"rst_sent, exch_sent, callsign_recv, rst_recv, exch_recv, tx_power, vswr, xota, xota_loc, comments) "
+			"VALUES('%s', '%s', '%s', '%s',  '%s','%s','%s',  '%s','%s','%s','%d.%d','%d.%d','%s','%s','%s');",
 				log_freq, mode, date_str, time_str, mycallsign,
 				rst_sent, exchange_sent, contact_callsign, rst_recv, exchange_recv,
-				tx_power / 10, tx_power % 10, tx_vswr / 10, tx_vswr % 10, comments);
+				tx_power / 10, tx_power % 10, tx_vswr / 10, tx_vswr % 10, xota, xota_loc, comments);
 	} else {
 		sprintf(statement,
 			"INSERT INTO logbook (freq, mode, qso_date, qso_time, callsign_sent,"
@@ -419,7 +420,10 @@ void import_logs(char *filename){
 */
 
 // ADIF field headers, see note above
-const static char *adif_names[]={"ID","MODE","FREQ","QSO_DATE","TIME_ON","OPERATOR","RST_SENT","STX_String","CALL","RST_RCVD","SRX_String","STX","COMMENTS","TX_PWR"};
+// MY_SIG_INFO for POTA? use MY_POTA_REF for now
+// MY_SOTA_REF for SOTA
+// IOTA for IOTA
+const static char *adif_names[]={"ID","MODE","FREQ","QSO_DATE","TIME_ON","OPERATOR","RST_SENT","STX_String","CALL","RST_RCVD","SRX_String","STX","COMMENTS","TX_PWR","MY_SIG","MY_SOTA_REF"};
 
 struct band_name {
 	char *name;
@@ -454,15 +458,15 @@ static void strip_chr(char *str, const char to_remove){
 void *prepare_query_by_date(const char *start_date, const char *end_date) {
 	char statement[250];
 	sqlite3_stmt *ret = NULL;
-	if (logbook_has_power_and_swr()) {
+	if (logbook_has_power_swr_xota()) {
 		if (start_date && start_date[0]) {
 			snprintf(statement, sizeof(statement),
-					"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments,tx_power "
+					"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments,tx_power,xota,xota_loc "
 					" from logbook where (qso_date >= '%s' AND qso_date <= '%s') ORDER BY id DESC;",
 					start_date, end_date);
 		} else {
 			strncpy(statement,
-					"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments,tx_power "
+					"select id,mode,freq,qso_date,qso_time,callsign_sent,rst_sent,exch_sent,callsign_recv,rst_recv,exch_recv,tx_id,comments,tx_power,xota,xota_loc "
 					" from logbook ORDER BY id DESC;", sizeof(statement));
 		}
 	} else {
@@ -492,7 +496,8 @@ int write_adif_record(void *stmt, char *buf, int len) {
 	int num_cols = sqlite3_column_count(stmt);
 	int rec = 0;
 	int buf_offset = 0;
-	for (int i = 0; i < num_cols; i++) {
+	char sig[5]; // IOTA/SOTA/POTA
+	for (int i = 1; i < num_cols; i++) {
 		switch (sqlite3_column_type(stmt, i))
 		{
 		case (SQLITE3_TEXT):
@@ -513,6 +518,7 @@ int write_adif_record(void *stmt, char *buf, int len) {
 		//~ printf("col %d of %d type %d: ADIF %s value '%s'\n",
 			//~ i, num_cols, sqlite3_column_type(stmt, i), adif_names[i], field_value);
 
+		const int field_len = strlen(field_value);
 		bool output_done = false;
 		switch (i) { // columns are in the order requested in prepare_query_by_date()
 		case 1: // mode
@@ -537,28 +543,43 @@ int write_adif_record(void *stmt, char *buf, int len) {
 		case 7: // exch_sent
 			if (rec == 1)
 				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
-					"<MY_GRIDSQUARE:%d>%s ", strlen(field_value), field_value);
+					"<MY_GRIDSQUARE:%d>%s ", field_len, field_value);
 			else
 				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
-					"<%s:%d>%s ", adif_names[i], strlen(field_value), field_value);
+					"<%s:%d>%s ", adif_names[i], field_len, field_value);
 			output_done = true;
 			break;
 		case 10: // exch_recv
 			if (rec == 1)
 				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
-					"<GRIDSQUARE:%d>%s ", strlen(field_value), field_value);
+					"<GRIDSQUARE:%d>%s ", field_len, field_value);
 			else
 				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
-					"<%s:%d>%s ", adif_names[i], strlen(field_value), field_value);
+					"<%s:%d>%s ", adif_names[i], field_len, field_value);
 			output_done = true;
+			break;
+		case 14: // xota
+			strncpy(sig, field_value, sizeof(sig));
+			break;
+		case 15: // xota_loc
+			if (!strcmp("POTA", sig)) {
+				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
+					"<MY_POTA_REF:%d>%s ", field_len, field_value);
+				output_done = true;
+			} else if (!strcmp("IOTA", sig)) {
+				buf_offset += snprintf(buf + buf_offset, len - buf_offset,
+					"<IOTA:%d>%s ", field_len, field_value);
+				output_done = true;
+			}
+			// SOTA (as default) is taken care of below: adif_names[15] = MY_SOTA_REF
 			break;
 		default:
 			break;
 		}
-		if (!output_done) {
+		if (!output_done && field_len > 0) {
 			//~ printf("    default output @%d\n", buf_offset);
 			buf_offset += snprintf(buf + buf_offset, len - buf_offset,
-				"<%s:%d>%s ", adif_names[i], strlen(field_value), field_value);
+				"<%s:%d>%s ", adif_names[i], field_len, field_value);
 		}
 	}
 	buf_offset += snprintf(buf + buf_offset, len - buf_offset, "<EOR>\n");
