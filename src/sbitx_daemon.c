@@ -58,9 +58,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 extern int get_rx_gain(void);
 extern int calculate_s_meter(struct rx *r, double rx_gain);
 extern struct rx *rx_list;
-#define FT8_START_QSO 1
-#define FT8_CONTINUE_QSO 0
-void ft8_process(char *received, int operation);
 void change_band(char *request);
 void highlight_band_field(int new_band);
 /* command  buffer for commands received from the remote */
@@ -3963,7 +3960,7 @@ void zbitx_poll(int all){
 		if(!strncmp(buff, "FT8 ", 4)){
 			char ft8_message[100];
 			hd_strip_decoration(ft8_message, buff);
-			//ft8_process(ft8_message, FT8_START_QSO);
+			//ft8_process(ft8_message, FTX_START_QSO);
 			printf("FT4/8 from zbitx: %s\n", ft8_message);
 			remote_execute(ft8_message);
 		}
@@ -4897,7 +4894,7 @@ void cmd_exec(char *cmd)
 
 	if (!strcmp(exec, "FT8"))
 	{
-		ft8_process(args, FT8_START_QSO);
+		ft8_process(args, FTX_START_QSO);
 	}
 	else if (!strcmp(exec, "callsign"))
 	{

@@ -94,7 +94,7 @@ int field_set(const char *label, const char *new_value);
 int get_field_value(const char *id, char *value);
 int get_field_meta(const char *id, int *min, int *max, int *step);
 int get_field_value_by_label(const char *label, char *value);
-const char *field_str(const char *label);
+const char *field_str(const char *label); // TODO look up by "cmd" not label
 int field_int(char *label);
 const char *get_field_selections(const char *id);
 // only 9p so far, but could have other purposes (such as marking GUI fields dirty, zbitx screen updates)
