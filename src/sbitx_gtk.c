@@ -55,9 +55,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 extern int get_rx_gain(void);
 extern int calculate_s_meter(struct rx *r, double rx_gain);
 extern struct rx *rx_list;
-#define FT8_START_QSO 1
-#define FT8_CONTINUE_QSO 0
-void ft8_process(char *received, int operation);
 void change_band(char *request);
 void highlight_band_field(int new_band);
 /* command  buffer for commands received from the remote */
@@ -1637,9 +1634,9 @@ int do_console(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 				if (console_extract_semantic(rst, sizeof(rst), console_selected_line, STYLE_SNR) >= 0)
 						field_set("SENT", rst);
 
-				char time[7];
+				char time[9];
 				if (console_extract_semantic(time, sizeof(time), console_selected_line, STYLE_TIME) >= 0)
-					console_selected_time = atoi(time);
+					console_selected_time = atoi(time); // skip tenths of seconds
 
 				printf("console press: sel %d cur %d %d '%s' from '%s'\n",
 					console_selected_line, console_current_line, console_selected_time, console_selected_callsign, console_line);
@@ -7134,7 +7131,7 @@ void zbitx_poll(int all){
 		if(!strncmp(buff, "FT8 ", 4)){
 			char ft8_message[100];
 			hd_strip_decoration(ft8_message, buff);
-			//ft8_process(ft8_message, FT8_START_QSO);
+			//ft8_process(ft8_message, FTX_START_QSO);
 			printf("FT8 from zbitx: %s\n", ft8_message);
 			remote_execute(ft8_message);
 		}
@@ -8215,7 +8212,7 @@ void cmd_exec(char *cmd)
 
 	if (!strcmp(exec, "FT8"))
 	{
-		ft8_process(args, FT8_START_QSO);
+		ft8_process(args, FTX_START_QSO);
 	}
 	else if (!strcmp(exec, "callsign"))
 	{
