@@ -961,8 +961,8 @@ struct field main_controls[] = {
 	 "", 300, 3000, 50, 0},
 
 	// FT8 controls
-	{"#ft8_auto", NULL, 1000, -1000, 50, 50, "FT8_AUTO", 40, "ON", FIELD_TOGGLE, STYLE_FIELD_VALUE,
-	 "ON/OFF", 0, 0, 0, FT8_CONTROL},
+	{"#ft8_auto", NULL, 1000, -1000, 50, 50, "FT8_AUTO", 40, "ON", FIELD_SELECTION, STYLE_FIELD_VALUE,
+	 "OFF/ON/CQ_ALT/xOTA", 0, 0, 0, FT8_CONTROL},
 	{"#ft8_tx1st", NULL, 1000, -1000, 50, 50, "FT8_TX1ST", 40, "ON", FIELD_TOGGLE, STYLE_FIELD_VALUE,
 	 "ON/OFF", 0, 0, 0, FT8_CONTROL},
 	{"#ft8_repeat", NULL, 1000, -1000, 50, 50, "FT8_REPEAT", 40, "5", FIELD_NUMBER, STYLE_FIELD_VALUE,
