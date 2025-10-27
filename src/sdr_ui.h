@@ -81,9 +81,9 @@ void redraw();
 void key_pressed(char c);
 
 int field_set(const char *label, const char *new_value);
-int get_field_value(char *id, char *value);
-int get_field_value_by_label(char *label, char *value);
-const char *field_str(const char *label);
+int get_field_value(const char *id, char *value);
+int get_field_value_by_label(const char *label, char *value);
+const char *field_str(const char *label); // TODO look up by "cmd" not label
 int field_int(char *label);
 
 void write_console(sbitx_style style, const char *text);
@@ -103,7 +103,7 @@ void call_wipe();
 void update_log_ed();
 void write_call_log();
 
-int macro_load(char *filename, char *output);
+int macro_load(const char *filename, char *output);
 int macro_exec(int key, char *dest);
 void macro_label(int fn_key, char *label);
 void macro_list(char *output);
