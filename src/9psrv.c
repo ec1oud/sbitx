@@ -808,7 +808,11 @@ static void stat_length_unknown(Ixp9Req *r, IxpStat *s, const Devfile *df, int d
 	s->mode = df->mode;
 	s->mtime = console_last_time();
 	s->atime = df->atime;
-	s->length = 1; // it's ridiculous to run a DB query and format the output just to sum up the data length (isn't it?)
+	// It's ridiculous to run a DB query and format the output just to sum up the data length,
+	// so we don't know the length to give; but if we give a largish number here,
+	// the client is likely to choose a smaller buffer size; then if the first call to
+	// read_logbook has offset > 0, we can guess that the client is trying to "tail" the file.
+	s->length = 65536;
 	s->name = df->name;
 	s->uid = user;
 	s->gid = user;
@@ -819,22 +823,31 @@ static void stat_length_unknown(Ixp9Req *r, IxpStat *s, const Devfile *df, int d
 
 static int read_logbook(Ixp9Req *r, const Devfile *df, char *out, int len, int offset) {
 	ClientData *cd = r->srv->aux;
+	FidAux *f = r->fid->aux;
+
 	assert(cd);
-	debug("read_logbook srv-aux %p len %d offset %d: found sqlite query %p\n",
-		cd, len, offset, cd->logbook_query);
+	debug("read_logbook srv-aux %p len %d offset %d (was %d): found sqlite query %p\n",
+		cd, len, offset, f->offset, cd->logbook_query);
+	if (len < 256) {
+		printf("warning: len %d not enough to write any logbook entries\n", len);
+		return 0;
+	}
 
 	char *end = out;
 	if (!cd->logbook_query) {
 		debug("   preparing logbook query\n");
 		cd->logbook_query = prepare_query_by_date(NULL, NULL); // all records; save sqlite3_stmt * for next time
-		end += write_adif_header(out, len, "9p daemon");
-		printf("   wrote ADIF header: %d bytes\n", end - out);
+		if (offset == 0) {
+			end += write_adif_header(out, len, "9p daemon");
+			printf("   wrote ADIF header: %d bytes\n", end - out);
+		}
 	}
 
 	// just read one record; if there are comments, more could be too long for typical len == 4096 case
 	if (logbook_next(cd->logbook_query))
 		end += write_adif_record(cd->logbook_query, end, len);
-	printf("   read_logbook: returned %d bytes\n", end - out);
+	printf("   read_logbook: had space for %d, returned %d bytes\n", len, end - out);
+	f->offset = offset + end - out;
 	return end - out;
 }
 
