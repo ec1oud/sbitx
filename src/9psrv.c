@@ -188,15 +188,21 @@ typedef enum {
 	QID_CH_RECEIVED = 0x90,
 	QID_CH_SENT = 0xa0,
 	QID_CH_SEND = 0xb0,
+	QID_CH_RX_PITCH = 0xc0,
+	QID_CH_TX_PITCH = 0xd0,
+	QID_CH_AUTO = 0xe0,
+	QID_CH_CQ = 0xf0,
+	QID_CH_REPEAT = 0x100,
+	QID_CH_SIDETONE = 0x110,
 
-	QID_CH_FIELD_MASK = 0xF0,
+	QID_CH_FIELD_MASK = 0xFF0,
 
 	// starting channels:
 	// subsequent channels just increment the lowest nybble
 	// so we could have 16 of each type of channel
-	QID_CHANNELS = 0x1000,
-	QID_SSB_CHANNEL1 = 0x1100,
-	QID_FT8_CHANNEL1 = 0x1200,
+	QID_CHANNELS = 0x10000,
+	QID_SSB_CHANNEL1 = 0x11000,
+	QID_FT8_CHANNEL1 = 0x12000,
 } DevfileID;
 
 /* Global Vars */
@@ -224,12 +230,12 @@ static Devfile devfiles[] = {
 		nil, read_field, "#mygrid", write_field, "#mygrid", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_XOTA, "xota", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#xota", write_field, "#xota", P9_DMEXCL|0666, 0, 0, 0 },
-	{ QID_SETTINGS_XOTA_LOC, "xota-loc", QID_SETTINGS, SEM_NONE,
+	{ QID_SETTINGS_XOTA_LOC, "xota_loc", QID_SETTINGS, SEM_NONE,
 		nil, read_field, "#xota_loc", write_field, "#xota_loc", P9_DMEXCL|0666, 0, 0, 0 },
 	{ QID_SETTINGS_XOTA + QID_META, "xota.meta", QID_SETTINGS, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SETTINGS_XOTA + QID_META_CHOICES, "choices", QID_SETTINGS_XOTA + QID_META, SEM_NONE,
-		nil, read_field_meta, "#xota-choices", nil, nil, P9_DMEXCL|0666, 0, 0, 0 },
+		nil, read_field_meta, "#xota-choices", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 
 	{ QID_LOGBOOK, "logbook", QID_ROOT, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
@@ -286,7 +292,7 @@ static Devfile devfiles[] = {
 	{ QID_SPECTRUM_SPAN + QID_META_META, "span.meta", QID_SPECTRUM + QID_META, SEM_NONE,
 		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
 	{ QID_SPECTRUM_SPAN + QID_META_META + QID_META_CHOICES, "choices", QID_SPECTRUM_SPAN + QID_META_META, SEM_NONE,
-		nil, read_field_meta, "#span-choices", nil, nil, P9_DMEXCL|0666, 0, 0, 0 },
+		nil, read_field_meta, "#span-choices", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 	// TODO waterfall metadata
 	// TODO audio, power, swr
 
@@ -370,10 +376,90 @@ static Devfile devfiles[] = {
 		STYLE_FT8_RX, stat_text_spans, read_text_spans, "ft8_1-rcv_spans", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_RECEIVED + QID_META_LINE_INDEX, "lineindex", QID_FT8_CHANNEL1 + QID_CH_RECEIVED + QID_META,
 		STYLE_FT8_RX, stat_text_lineindex, read_text_lineindex, "ft8_1-rcv_lineindex", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
 	{ QID_FT8_CHANNEL1 + QID_CH_SENT, "sent", QID_FT8_CHANNEL1,
 		STYLE_FT8_TX, stat_text, read_text, "ft8_1-sent", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
 	{ QID_FT8_CHANNEL1 + QID_CH_SEND, "send", QID_FT8_CHANNEL1, SEM_NONE,
 		nil, read_field, "#text_in", write_field, "#text_in", P9_DMEXCL|0666, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH, "rx_pitch", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, read_field, "rx_pitch", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META, "rx_pitch.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "rx_pitch-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1  + QID_CH_RX_PITCH+ QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "rx_pitch-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "rx_pitch-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "rx_pitch-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_RX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "rx_pitch-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH, "tx_pitch", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, read_field, "#tx_pitch", write_field, "#tx_pitch", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META, "tx_pitch.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "#tx_pitch-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "#tx_pitch-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "#tx_pitch-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "#tx_pitch-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_TX_PITCH + QID_META,
+		SEM_NONE, nil, read_field_meta, "#tx_pitch-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT, "repeat", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, read_field, "#ft8_repeat", write_field, "#ft8_repeat", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META, "repeat.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_repeat-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_repeat-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_repeat-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_repeat-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_REPEAT + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_repeat-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE, "sidetone", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, read_field, "sidetone", write_field, "sidetone", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META, "sidetone.meta", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META,
+		SEM_NONE, nil, read_field_meta, "sidetone-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META_FLOAT_INT_FMT, "format", QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META,
+		SEM_NONE, nil, read_field_meta, "sidetone-format", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META_MIN, "min", QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META,
+		SEM_NONE, nil, read_field_meta, "sidetone-min", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META_MAX, "max", QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META,
+		SEM_NONE, nil, read_field_meta, "sidetone-max", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META_STEP, "step", QID_FT8_CHANNEL1 + QID_CH_SIDETONE + QID_META,
+		SEM_NONE, nil, read_field_meta, "sidetone-step", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+
+	{ QID_FT8_CHANNEL1 + QID_CH_AUTO, "auto", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, read_field, "#ft8_auto", write_field, "#ft8_auto", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_AUTO + QID_META, "auto.meta", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_AUTO + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_AUTO + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_auto-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_AUTO + QID_META_CHOICES, "choices", QID_FT8_CHANNEL1 + QID_CH_AUTO + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_auto-choices", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
+
+	// TODO cq even/odd rather than on/off
+	{ QID_FT8_CHANNEL1 + QID_CH_CQ, "cq_tx1st", QID_FT8_CHANNEL1, SEM_NONE,
+		nil, read_field, "#ft8_tx1st", write_field, "#ft8_tx1st", P9_DMEXCL|0666, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_CQ + QID_META, "cq_tx1st.meta", QID_FT8_CHANNEL1,
+		SEM_NONE, nil, nil, nil, nil, nil, P9_DMDIR|P9_DMEXCL|0555, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_CQ + QID_META_LABEL, "label", QID_FT8_CHANNEL1 + QID_CH_CQ + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_tx1st-label", nil, "", P9_DMEXCL|0444, 0, 0, 0 },
+	{ QID_FT8_CHANNEL1 + QID_CH_CQ + QID_META_CHOICES, "choices", QID_FT8_CHANNEL1 + QID_CH_CQ + QID_META,
+		SEM_NONE, nil, read_field_meta, "#ft8_tx1st-choices", nil, nil, P9_DMEXCL|0444, 0, 0, 0 },
 };
 static const int devfiles_count = sizeof(devfiles) / sizeof(Devfile);
 
@@ -401,6 +487,7 @@ static int read_field(Ixp9Req *r, const Devfile *df, char *out, int len, int off
 	char val[64];
 	get_field_value(df->read_name, val); // TODO unsafe: pass sizeof as len
 	int vlen = strlen(val);
+	debug("read_field %s: '%s' %d %d\n", df->read_name, val, vlen, offset);
 	if (offset >= vlen)
 		return 0;
 	char *end = stpncpy(out, val, len); // Plan 9: strecpy
@@ -450,18 +537,34 @@ static int read_field_meta(Ixp9Req *req, const Devfile *df, char *out, int len, 
 			case QID_META_FLOAT_INT_FMT:
 				return snprintf(out, len, "%%.0f");
 			case QID_META_LABEL:
-				if ((df->id & QID_CH_FIELD_MASK) == QID_CH_FREQ)
-					return snprintf(out, len, "Frequency");
-				else if ((df->id & QID_CH_FIELD_MASK) == QID_CH_IF_GAIN)
-					return snprintf(out, len, "IF");
-				else if ((df->id & QID_CH_FIELD_MASK) == QID_CH_S_METER)
-					return snprintf(out, len, "Signal");
-				else if ((df->id & QID_CH_FIELD_MASK) == QID_CH_DRIVE)
-					return snprintf(out, len, "Drive");
-				else if ((df->id & QID_FIELD_MASK) == QID_SWR)
+				//~ printf("0x%x is a label; masked 0x%x or 0x%x\n", df->id, df->id & QID_FIELD_MASK, df->id & QID_CH_FIELD_MASK);
+				if ((df->id & QID_FIELD_MASK) == QID_SWR)
 					return snprintf(out, len, "SWR");
 				else if ((df->id & QID_FIELD_MASK) == QID_POWER)
 					return snprintf(out, len, "Power Out");
+				switch (df->id & QID_CH_FIELD_MASK) {
+					case QID_CH_FREQ:
+						return snprintf(out, len, "Frequency");
+					case QID_CH_IF_GAIN:
+						return snprintf(out, len, "IF");
+					case QID_CH_S_METER:
+						return snprintf(out, len, "Signal");
+					case QID_CH_DRIVE:
+						return snprintf(out, len, "Drive");
+					case QID_CH_RX_PITCH:
+						return snprintf(out, len, "RX Pitch");
+					case QID_CH_TX_PITCH:
+						return snprintf(out, len, "TX Pitch");
+					case QID_CH_AUTO:
+						return snprintf(out, len, "Auto");
+					case QID_CH_CQ:
+						return snprintf(out, len, "CQ");
+					case QID_CH_REPEAT:
+						return snprintf(out, len, "Repeat");
+					case QID_CH_SIDETONE:
+						return snprintf(out, len, "Sidetone");
+				}
+				break;
 		}
 	}
 	return 0;
