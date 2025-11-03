@@ -1205,6 +1205,7 @@ void ft8_on_start_qso(char *message){
 	tx_off();
 	call_wipe();
 	set_reply_tx1st(msg_time % 100);
+	set_field_int("rx_pitch", rx_pitch);
 
 	if (!strcmp(m1, "CQ")){
 		if (m4[0]){
