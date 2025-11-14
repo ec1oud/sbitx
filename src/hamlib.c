@@ -173,21 +173,21 @@ char mode[10];
 void set_mode(int client_socket, char* f) {
     char mode[10];
     char cmd[50];
-    char passband[3];
+    char passband[10];
     char* tok = strtok(f," ");
     if (tok != 0) {
-        strcpy(mode,tok);
+        strncpy(mode, tok, sizeof(mode));
         tok = strtok(0," ");
         //printf("Received mode: [%s] \n", mode);
         if (tok != 0) {
-            strcpy(passband,tok);
+            strncpy(passband, tok, sizeof(passband));
             //printf("Received bw: [%s] \n", passband);
         }
     } else {
         //We didn't receive what was expected
         send_response(client_socket, "RPRT -9\n");
         return;
-    } 
+    }
     if (!strcmp(mode, "PKTUSB"))
         strcpy(mode, "DIGI");
     //printf("Mode? = '%s'\n", mode);
