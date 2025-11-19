@@ -43,7 +43,7 @@ void logbook_refill(const char *query);
 void clear_tree(GtkListStore *list_store);
 
 int logbook_has_power_and_swr() {
-	static int ret = -1;
+	static int ret = 0; // FALSE
 	if (ret < 0) {
 		sqlite3_stmt *stmt;
 		if (db == NULL)
@@ -51,9 +51,8 @@ int logbook_has_power_and_swr() {
 		// https://stackoverflow.com/a/30348775
 		// it might be called sqlite_schema in newer versions
 		sqlite3_prepare_v2(db, "select sql from sqlite_master where name='logbook';", -1, &stmt, NULL);
-		assert(sqlite3_step(stmt) == SQLITE_ROW);
-		assert(sqlite3_column_count(stmt));
-		assert(sqlite3_column_type(stmt, 0) == SQLITE3_TEXT);
+		if (sqlite3_step(stmt) != SQLITE_ROW || !sqlite3_column_count(stmt) || sqlite3_column_type(stmt, 0) != SQLITE3_TEXT)
+			return ret; // something went wrong: just say no
 		const char *sql = sqlite3_column_text(stmt, 0); // a CREATE TABLE command
 		ret = (strstr(sql, "tx_power") && strstr(sql, "vswr"));
 		sqlite3_finalize(stmt);
