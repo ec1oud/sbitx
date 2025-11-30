@@ -1337,7 +1337,6 @@ void ft8_poll(int tx_is_on){
 				if (strcmp(field_str("FTX_AUTO"), "OFF"))
 					call_wipe();
 				ft8_abort(true);
-				ftx_tx_text[0] = 0;
 			}
 		}
 		return;

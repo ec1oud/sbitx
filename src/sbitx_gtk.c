@@ -705,6 +705,7 @@ int do_zero_beat_sense_edit(struct field *f, cairo_t *gfx, int event, int a, int
 int do_dropdown(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 int do_band_dropdown(struct field *f, cairo_t *gfx, int event, int a, int b, int c);
 struct band *get_band_by_frequency(int frequency);
+void on_esc();
 void cleanup_on_exit(void);
 
 struct field *active_layout = NULL;
@@ -5227,6 +5228,24 @@ void execute_app(char *app)
 	}
 }
 
+/*!
+	2-stage esc: the first time, just stop transmitting; but if called again
+	within 3 seconds, stop the QSO (if the modem makes any such distinction)
+	and clear the logger fields.
+*/
+void on_esc()
+{
+	static time_t last_esc_time = 0;
+	time_t now = time(NULL);
+	const bool terminate_qso = now - last_esc_time < 3;
+	//~ printf("on_esc: last time %lld; now %lld; delta %lld sec; terminate QSO? %d\n",
+		//~ last_esc_time, now, now - last_esc_time, terminate_qso);
+	modem_abort(terminate_qso);
+	last_esc_time = now;
+	if (terminate_qso)
+		call_wipe();
+}
+
 int do_text(struct field *f, cairo_t *gfx, int event, int a, int b, int c)
 {
 	int width, offset, text_length, line_start, y;
@@ -7829,10 +7848,7 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
 	switch (event->keyval)
 	{
 	case MIN_KEY_ESC:
-		// TODO we could do a 2-stage esc: call it with false the first time, true the second
-		modem_abort(true);
-		tx_off();
-		call_wipe();
+		on_esc();
 		break;
 	case MIN_KEY_UP:
 		if (f_focus == NULL && f_hover > active_layout)
@@ -9710,12 +9726,7 @@ void do_control_action(char *cmd)
 	}
 	else if (!strcmp(request, "ESC"))
 	{
-		modem_abort(true);
-		tx_off();
-		call_wipe();
-		field_set("TEXT", "");
-		modem_abort(true);
-		tx_off();
+		on_esc();
 	}
 	else if (!strcmp(request, "TX"))
 	{
@@ -10644,15 +10655,8 @@ void get_print_and_set_values(GtkWidget *freq_sliders[], GtkWidget *gain_sliders
 }
 int main(int argc, char *argv[])
 {
-
 	puts(VER_STR);
 	active_layout = main_controls;
-
-	// ensure_single_instance();
-
-	// unlink any pending ft8 transmission
-	unlink("/home/pi/sbitx/ft8tx_float.raw");
-	call_wipe();
 
 	ui_init(argc, argv);
 	hw_init();
@@ -10712,12 +10716,10 @@ int main(int argc, char *argv[])
 		ini_parse(directory, user_settings_handler, NULL);
 	}
 
-	// the logger fields may have an unfinished qso details
+	// the logger fields may have unfinished qso details (loaded from settings)
 	call_wipe();
 
 	macro_load(get_field("#current_macro")->value, NULL);
-
-	char buff[1000];
 
 	// now set the frequency of operation and more to vfo_a
 	set_field("r1:freq", get_field("#vfo_a_freq")->value);
@@ -10729,6 +10731,7 @@ int main(int argc, char *argv[])
 
 	if (strcmp(get_field("#mycallsign")->value, "N0CALL"))
 	{
+		char buff[100];
 		sprintf(buff, "\nWelcome %s your grid is %s\n",
 				get_field("#mycallsign")->value, get_field("#mygrid")->value);
 		write_console(STYLE_LOG, buff);
